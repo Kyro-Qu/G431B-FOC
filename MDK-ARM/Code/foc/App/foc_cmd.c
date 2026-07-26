@@ -12,6 +12,7 @@
 #include "foc_calib.h"
 #include "foc_ident.h"
 #include "foc_telemetry.h"
+#include "../Core/foc_port.h"
 #include "main.h"
 
 #include <stdio.h>
@@ -34,8 +35,10 @@ static uint8_t cur_axis = 0U;
 /* ---------------- 输出 ---------------- */
 
 /*
- * 阻塞发送一段响应。遥测帧只有 ~70 字节（6.5M 波特率下约 0.1 ms），
- * 简单等待 UART 空闲即可，不会与遥测 DMA 冲突。
+ * 阻塞发送一段响应。先挂起遥测（ISR 里不再启动新的 DMA 发送），
+ * 等在途 DMA 帧发完（gState 回 READY，~0.1ms@6.5M），再独占发送。
+ * 注意判据只看发送方向 gState：组合状态 HAL_UART_GetState() 因
+ * RX 常驻 DMA 空闲接收永远不等于 READY。
  * 公开给其它 App 模块（如 foc_ident）使用，仅限主循环上下文。
  */
 void foc_cmd_print(const char *fmt, ...)
@@ -52,11 +55,13 @@ void foc_cmd_print(const char *fmt, ...)
         return;
     }
 
+    foc_telemetry_suspend(1U);
     t0 = HAL_GetTick();
-    while ((HAL_UART_GetState(&huart2) != HAL_UART_STATE_READY) &&
+    while ((huart2.gState != HAL_UART_STATE_READY) &&
            ((uint32_t)(HAL_GetTick() - t0) < 5U)) {
     }
     (void)HAL_UART_Transmit(&huart2, (uint8_t *)out, (uint16_t)n, 20U);
+    foc_telemetry_suspend(0U);
 }
 
 static const char *state_name(foc_state_t s)
@@ -189,6 +194,8 @@ static void cmd_execute(char *line)
         if (m->state != FOC_STATE_IDLE) {
             foc_cmd_print("err: calib needs IDLE, state=%s\r\n",
                       state_name(m->state));
+        } else if (foc_calib_is_active() != 0U) {
+            foc_cmd_print("err: calib busy on another axis\r\n");
         } else {
             foc_calib_start(m);
             if (m->state == FOC_STATE_CALIB) {
@@ -207,20 +214,33 @@ static void cmd_execute(char *line)
     } else if (strcmp(cmd, "m") == 0) {
         if (arg == 0) {
             foc_cmd_print("mode=%s\r\n", mode_name(m->mode));
-        } else if (strcmp(arg, "vf") == 0) {
-            foc_motor_set_mode(m, FOC_MODE_OPENLOOP_VF);
-            foc_cmd_print("M%u mode=vf\r\n", (unsigned)cur_axis);
-        } else if (strcmp(arg, "iq") == 0) {
-            foc_motor_set_mode(m, FOC_MODE_TORQUE);
-            foc_cmd_print("M%u mode=iq\r\n", (unsigned)cur_axis);
-        } else if (strcmp(arg, "vel") == 0) {
-            foc_motor_set_mode(m, FOC_MODE_VELOCITY);
-            foc_cmd_print("M%u mode=vel\r\n", (unsigned)cur_axis);
-        } else if (strcmp(arg, "pos") == 0) {
-            foc_motor_set_mode(m, FOC_MODE_POSITION);
-            foc_cmd_print("M%u mode=pos\r\n", (unsigned)cur_axis);
         } else {
-            foc_cmd_print("err: m vf|iq|vel|pos\r\n");
+            foc_mode_t want;
+            uint8_t known = 1U;
+
+            if (strcmp(arg, "vf") == 0) {
+                want = FOC_MODE_OPENLOOP_VF;
+            } else if (strcmp(arg, "iq") == 0) {
+                want = FOC_MODE_TORQUE;
+            } else if (strcmp(arg, "vel") == 0) {
+                want = FOC_MODE_VELOCITY;
+            } else if (strcmp(arg, "pos") == 0) {
+                want = FOC_MODE_POSITION;
+            } else {
+                known = 0U;
+                foc_cmd_print("err: m vf|iq|vel|pos\r\n");
+            }
+            if (known != 0U) {
+                if (foc_motor_set_mode(m, want) != 0U) {
+                    foc_cmd_print("M%u mode=%s\r\n",
+                                  (unsigned)cur_axis, mode_name(m->mode));
+                } else {
+                    foc_cmd_print("err: mode rejected, state=%s calib=%u"
+                                  " (closed loop needs calib)\r\n",
+                                  state_name(m->state),
+                                  (unsigned)m->calib.valid);
+                }
+            }
         }
 
     } else if (strcmp(cmd, "t") == 0) {
@@ -333,30 +353,46 @@ void foc_cmd_init(void)
 
 void foc_cmd_task(void)
 {
+    char local[CMD_LINE_SIZE];
+    uint32_t pm;
+    uint16_t n;
+
     if (line_ready == 0U) {
         return;
     }
 
-    /* 解析期间关闭"行就绪"标志即可，接收回调只追加不解析 */
-    line_buf[(line_len < CMD_LINE_SIZE) ? line_len : (CMD_LINE_SIZE - 1U)] = '\0';
+    /* 拷贝到局部缓冲后再解析：line_buf 可能在解析期间被接收
+     * 回调（USART2 中断，优先级 0）改写。临界区只包住拷贝+清标志 */
+    pm = foc_critical_enter();
+    n = (line_len < CMD_LINE_SIZE) ? line_len : (CMD_LINE_SIZE - 1U);
+    memcpy(local, line_buf, n);
     line_len = 0U;
     line_ready = 0U;
-    cmd_execute(line_buf);
+    foc_critical_exit(pm);
+
+    local[n] = '\0';
+    cmd_execute(local);
 }
 
 /* DMA 接收事件：把"新增的"字节搬进行缓冲，遇到行尾置标志。
  * 事件可能是半满(HT)/全满(TC)/空闲(IDLE)：HT 时接收仍在进行，
- * 用 rx_last_pos 记录已处理位置，避免同一段字节被处理两次。 */
+ * 用 rx_last_pos 记录已处理位置，避免同一段字节被处理两次。
+ *
+ * 重入防护：HT 回调跑在 DMA1_Ch2 中断（优先级 5），IDLE 回调跑在
+ * USART2 中断（优先级 0），后者可打断前者造成 rx_last_pos/line_buf
+ * 状态错乱。整个处理序列包进临界区（≤64 字节搬运，约 1µs）。 */
 static uint16_t rx_last_pos = 0U;
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
     uint16_t i;
+    uint32_t pm;
 
     if (huart->Instance != USART2) {
         return;
     }
 
+    pm = foc_critical_enter();
     for (i = rx_last_pos; i < Size; i++) {
         char ch = (char)rx_dma_buf[i];
 
@@ -377,15 +413,19 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
         == HAL_OK) {
         rx_last_pos = 0U;
     }
+    foc_critical_exit(pm);
 }
 
 /* 接收出错（溢出/噪声帧）：清错误并重启接收 */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART2) {
+        uint32_t pm = foc_critical_enter();
+
         if (HAL_UARTEx_ReceiveToIdle_DMA(&huart2, rx_dma_buf, CMD_RX_DMA_SIZE)
             == HAL_OK) {
             rx_last_pos = 0U;
         }
+        foc_critical_exit(pm);
     }
 }

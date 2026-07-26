@@ -17,7 +17,8 @@ void foc_observer_init(foc_observer_t *obs,
     obs->pll_kp = pll_kp;
     obs->pll_ki = pll_ki;
 
-    /* VESC 经验值：γ 与磁链平方成反比时收敛速度基本恒定 */
+    /* γ 与磁链平方成反比时收敛速度基本恒定。25/λ² 是保守默认值，
+     * VESC 向导给的典型值约 100/λ²——接入真机后若收敛慢可加大 */
     if (gamma > 0.0f) {
         obs->gamma = gamma;
     } else {
@@ -48,8 +49,15 @@ float foc_observer_update(foc_observer_t *obs,
     float e1 = obs->x1 - (L * i_ab->alpha);
     float e2 = obs->x2 - (L * i_ab->beta);
 
-    /* 幅值约束误差：真实转子磁链幅值恒为 λm */
+    /* 幅值约束误差：真实转子磁链幅值恒为 λm。
+     * 跟随 VESC 的做法把正误差截断为 0：只在估计磁链"越出圆外"时
+     * 施加收缩修正，圆内的增长交给反电动势积分本身完成——
+     * 这避免了启动/低速时噪声驱动的正反馈发散。 */
     float err = lambda_sq - ((e1 * e1) + (e2 * e2));
+
+    if (err > 0.0f) {
+        err = 0.0f;
+    }
 
     /* 磁链积分 + 非线性修正（Ortega 观测器核心公式） */
     float x1_dot = v_ab->alpha - (R * i_ab->alpha) +
@@ -60,10 +68,13 @@ float foc_observer_update(foc_observer_t *obs,
     obs->x1 += x1_dot * dt;
     obs->x2 += x2_dot * dt;
 
-    /* 转子磁链方向 = 电角度 */
+    /* 转子磁链方向 = 电角度。幅值过小（起步/停转）时角度全是噪声，
+     * 保持上一拍的角度不更新，避免 atan2 在原点附近乱跳 */
     e1 = obs->x1 - (L * i_ab->alpha);
     e2 = obs->x2 - (L * i_ab->beta);
-    obs->theta_e = foc_wrap_0_2pi(atan2f(e2, e1));
+    if (((e1 * e1) + (e2 * e2)) > (lambda_sq * 1e-6f)) {
+        obs->theta_e = foc_wrap_0_2pi(atan2f(e2, e1));
+    }
 
     /* ---- PLL 提取转速 ---- */
     {

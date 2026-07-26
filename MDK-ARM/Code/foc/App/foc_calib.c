@@ -7,6 +7,7 @@
 #include "foc_config.h"
 #include "foc_utils.h"
 #include "main.h"
+#include "../Core/foc_port.h"
 #include "../HAL/foc_board_g431.h"
 
 volatile uint8_t g_foc_calib_state = (uint8_t)FOC_CALIB_IDLE;
@@ -85,15 +86,21 @@ void foc_calib_start(foc_motor_t *m)
         return;
     }
 
-    /* 校准依赖：Z 脉冲编码器 + 电流采样就绪 */
+    /* 单例 FSM 占用防护：另一根轴正在校准时拒绝新的 start。
+     * 没有这个防护，对虚拟轴发 'c' 会把 calib_motor 改写掉，
+     * 正在校准的轴从此无人监管（永远带电旋转、超时永不触发）。 */
+    if (foc_calib_is_active() != 0U) {
+        return;
+    }
+
+    /* 前置依赖检查：失败只故障目标轴，不碰全局 FSM
+     * （calib_motor/calib_state 只属于真正开始了的校准会话） */
     if ((m->sensor == 0) || (m->sensor->consume_index == 0)) {
-        calib_motor = m;
-        calib_fail(FOC_FAULT_CALIB_STATE);
+        foc_motor_fault(m, FOC_FAULT_CALIB_STATE);
         return;
     }
     if ((m->cur == 0) || (m->cur->is_ready() == 0U)) {
-        calib_motor = m;
-        calib_fail(FOC_FAULT_CURRENT_SENSE);
+        foc_motor_fault(m, FOC_FAULT_CURRENT_SENSE);
         return;
     }
 
@@ -217,19 +224,40 @@ void foc_calib_task(void)
              *   θe(Z) = θe(对齐) + dir·pp·Δθm */
             float index_rad = foc_wrap_0_2pi(
                 (float)index_cnt * m->sensor->rad_per_cnt);
+            uint32_t pm;
 
             m->calib.electrical_offset_rad = foc_wrap_0_2pi(
                 FOC_CALIB_ALIGN_THETA_E +
                 ((float)m->calib.direction * m->params.pole_pairs * index_rad));
             m->calib.valid = 1U;
 
+            /* 校准已建立零点，此后关闭"每圈 Z 清零"：Z 中断锁存的
+             * 计数到快环处理之间有最多 62.5µs 延迟，运行中每圈硬清零
+             * 会把这段时间转过的计数丢掉（角度倒跳，误差正比转速，
+             * 12450 RPM 时可达 0.49 rad 电角度）。增量计数的半量程
+             * 回绕法本身没有累积误差来源，Z 只在校准时用。 */
+            m->sensor->set_zero_on_index(0U);
+
             foc_motor_openloop_hold(m, FOC_CALIB_ALIGN_THETA_E, 0.0f, 0.0f);
             foc_motor_set_angle_source(m, FOC_ANGLE_ENCODER_CALIBRATED);
             foc_motor_restore_current_limits(m);
             m->drv->disable();
-            m->state = FOC_STATE_IDLE;
-            calib_set_state(FOC_CALIB_DONE);
-            calib_checkpoint(SYSTEM_CHECKPOINT_CALIB_DONE);
+
+            /* 临界区回写状态：drv->disable() 期间 ISR 可能刚锁存
+             * FAULT，无条件写 IDLE 会把故障吞掉 */
+            pm = foc_critical_enter();
+            if (m->state == FOC_STATE_CALIB) {
+                m->state = FOC_STATE_IDLE;
+                foc_critical_exit(pm);
+                calib_set_state(FOC_CALIB_DONE);
+                calib_checkpoint(SYSTEM_CHECKPOINT_CALIB_DONE);
+            } else {
+                foc_critical_exit(pm);
+                /* 收尾瞬间被打进 FAULT：角度结果仍有效（valid=1），
+                 * 但本次会话按失败收场，故障码留给用户 f 清除 */
+                calib_set_state(FOC_CALIB_FAIL);
+                calib_checkpoint(SYSTEM_CHECKPOINT_CALIB_FAIL);
+            }
         } else if (calib_elapsed(now, calib_tick, FOC_CALIB_SEARCH_TIMEOUT_MS)) {
             calib_fail(FOC_FAULT_CALIB_TIMEOUT);
         }

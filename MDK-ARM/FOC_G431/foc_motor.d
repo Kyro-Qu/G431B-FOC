@@ -34,3 +34,4 @@ foc_g431\foc_motor.o: E:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include\dsp/transform_func
 foc_g431\foc_motor.o: E:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include\dsp/filtering_functions.h
 foc_g431\foc_motor.o: E:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include\dsp/quaternion_math_functions.h
 foc_g431\foc_motor.o: E:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include\dsp/window_functions.h
+foc_g431\foc_motor.o: Code\foc\Core\foc_port.h

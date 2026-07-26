@@ -11,6 +11,9 @@ foc_g431\foc_cmd.o: ./Code/foc/HAL/foc_config.h
 foc_g431\foc_cmd.o: Code\foc\App\foc_calib.h
 foc_g431\foc_cmd.o: Code\foc\App\foc_ident.h
 foc_g431\foc_cmd.o: Code\foc\App\foc_telemetry.h
+foc_g431\foc_cmd.o: Code\foc\App\../Core/foc_port.h
+foc_g431\foc_cmd.o: ../Drivers/CMSIS/Include/cmsis_compiler.h
+foc_g431\foc_cmd.o: ../Drivers/CMSIS/Include/cmsis_armcc.h
 foc_g431\foc_cmd.o: ../Core/Inc/main.h
 foc_g431\foc_cmd.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h
 foc_g431\foc_cmd.o: ../Core/Inc/stm32g4xx_hal_conf.h
@@ -20,8 +23,6 @@ foc_g431\foc_cmd.o: ../Drivers/CMSIS/Device/ST/STM32G4xx/Include/stm32g4xx.h
 foc_g431\foc_cmd.o: ../Drivers/CMSIS/Device/ST/STM32G4xx/Include/stm32g431xx.h
 foc_g431\foc_cmd.o: ../Drivers/CMSIS/Include/core_cm4.h
 foc_g431\foc_cmd.o: ../Drivers/CMSIS/Include/cmsis_version.h
-foc_g431\foc_cmd.o: ../Drivers/CMSIS/Include/cmsis_compiler.h
-foc_g431\foc_cmd.o: ../Drivers/CMSIS/Include/cmsis_armcc.h
 foc_g431\foc_cmd.o: ../Drivers/CMSIS/Include/mpu_armv7.h
 foc_g431\foc_cmd.o: ../Drivers/CMSIS/Device/ST/STM32G4xx/Include/system_stm32g4xx.h
 foc_g431\foc_cmd.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h

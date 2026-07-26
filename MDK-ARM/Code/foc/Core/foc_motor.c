@@ -9,6 +9,7 @@
 #include "foc_motor.h"
 #include "foc_transform.h"
 #include "foc_utils.h"
+#include "foc_port.h"
 
 /* dq 电流遥测低通时间常数（仅用于观察，不进控制环） */
 #define FOC_IDQ_TELEM_LPF_TF 0.002f
@@ -92,10 +93,18 @@ static uint8_t foc_motor_check_current(foc_motor_t *m)
 /**
  * 慢环（默认 1 kHz）：速度斜坡 → 速度 PI / 位置 P。
  * 输出写入 m->iq_ref，由快环的电流环去执行。
+ *
+ * 方向约定：用户帧 = 编码器帧（速度/位置反馈的正方向）。
+ * θe = dir·pp·θm + offset 意味着正 iq 产生的转矩沿"电角度增大"方向，
+ * 即编码器帧里的 dir 方向。所以外环输出跨进电角度帧时必须乘 dir，
+ * 否则 dir=-1（本板实测值）时速度/位置环是正反馈，直接飞车。
  */
 static void foc_motor_slow_loop(foc_motor_t *m)
 {
     const float dt = m->dt_fast * (float)m->slow_div;
+    const float dir = ((m->angle_source == FOC_ANGLE_ENCODER_CALIBRATED) &&
+                      (m->calib.valid != 0U))
+                          ? (float)m->calib.direction : 1.0f;
 
     m->velocity_filt_rpm = foc_lpf_update(&m->lpf_vel, m->velocity_rpm, dt);
 
@@ -113,8 +122,9 @@ static void foc_motor_slow_loop(foc_motor_t *m)
         }
         m->vel_ref_rpm = foc_clampf(m->vel_ref_rpm,
                                     -m->params.max_rpm, m->params.max_rpm);
-        m->iq_ref = foc_pid_update(&m->pid_vel,
-                                   m->vel_ref_rpm - m->velocity_filt_rpm, dt);
+        m->iq_ref = dir * foc_pid_update(&m->pid_vel,
+                                         m->vel_ref_rpm - m->velocity_filt_rpm,
+                                         dt);
         break;
     }
 
@@ -149,13 +159,15 @@ static void foc_motor_slow_loop(foc_motor_t *m)
         m->vel_ref_rpm = foc_clampf(vel_cmd,
                                     -m->cfg.pos_vel_limit_rpm,
                                     m->cfg.pos_vel_limit_rpm);
-        m->iq_ref = foc_pid_update(&m->pid_vel,
-                                   m->vel_ref_rpm - m->velocity_filt_rpm, dt);
+        m->iq_ref = dir * foc_pid_update(&m->pid_vel,
+                                         m->vel_ref_rpm - m->velocity_filt_rpm,
+                                         dt);
         break;
     }
 
     case FOC_MODE_TORQUE:
-        m->iq_ref = m->target;
+        /* 用户给的力矩正方向 = 编码器正方向 */
+        m->iq_ref = dir * m->target;
         break;
 
     case FOC_MODE_OPENLOOP_VF:
@@ -334,9 +346,13 @@ void foc_motor_fast_loop(foc_motor_t *m)
         float vd = foc_pid_update(&m->pid_id, 0.0f - m->i_dq.d, m->dt_fast);
         float vq = foc_pid_update(&m->pid_iq, m->iq_ref - m->i_dq.q, m->dt_fast);
 
-        /* dq 解耦前馈：抵消旋转坐标系带来的交叉耦合项 ω·L·i */
+        /* dq 解耦前馈：抵消旋转坐标系带来的交叉耦合项 ω·L·i。
+         * 真实电角速度 ωe = dθe/dt = dir·pp·ω_mech（θe 用 dir 换算，
+         * 角速度也必须带同一个 dir，否则 dir=-1 时耦合被加倍）。 */
         if (m->cfg.decouple_enable != 0U) {
-            float we = m->velocity_rpm * FOC_RPM_TO_RADS * m->params.pole_pairs;
+            float we = (float)m->calib.direction *
+                       m->velocity_rpm * FOC_RPM_TO_RADS *
+                       m->params.pole_pairs;
 
             vd -= we * m->params.ls_henry * m->i_dq.q;
             vq += we * m->params.ls_henry * m->i_dq.d;
@@ -399,6 +415,8 @@ uint8_t foc_motor_arm(foc_motor_t *m)
 
 void foc_motor_disarm(foc_motor_t *m)
 {
+    uint32_t pm;
+
     if (m->state == FOC_STATE_FAULT) {
         return; /* FAULT 只能通过 clear_fault 离开 */
     }
@@ -407,14 +425,36 @@ void foc_motor_disarm(foc_motor_t *m)
     m->v_dq.q = 0.0f;
     m->v_openloop.d = 0.0f;
     m->v_openloop.q = 0.0f;
-    m->state = FOC_STATE_IDLE;
+
+    /* 临界区回写：drv->disable() 期间 ISR 可能刚锁存 FAULT，
+     * 无保护的 state=IDLE 会把故障吞掉 */
+    pm = foc_critical_enter();
+    if (m->state != FOC_STATE_FAULT) {
+        m->state = FOC_STATE_IDLE;
+    }
+    foc_critical_exit(pm);
 }
 
-void foc_motor_set_mode(foc_motor_t *m, foc_mode_t mode)
+uint8_t foc_motor_set_mode(foc_motor_t *m, foc_mode_t mode)
 {
     if (m->mode == mode) {
-        return;
+        return 1U;
     }
+
+    /* 校准中不许切模式（校准状态机独占轴） */
+    if (m->state == FOC_STATE_CALIB) {
+        return 0U;
+    }
+    /* RUN 中从开环切闭环必须已有有效校准——否则电流环会在一个
+     * 与转子无关、仍按旧 ol_angle_step 自转的虚拟 dq 系上闭环，
+     * 绕过 arm() 的 NOT_CALIBRATED 保护 */
+    if ((m->state == FOC_STATE_RUN) &&
+        (mode != FOC_MODE_OPENLOOP_VF) &&
+        ((m->calib.valid == 0U) ||
+         (m->angle_source != FOC_ANGLE_ENCODER_CALIBRATED))) {
+        return 0U;
+    }
+
     m->mode = mode;
     m->target = 0.0f;
     foc_pid_reset(&m->pid_vel);
@@ -422,6 +462,13 @@ void foc_motor_set_mode(foc_motor_t *m, foc_mode_t mode)
     m->vel_ref_rpm = 0.0f;
     m->iq_ref = 0.0f;
 
+    if (mode == FOC_MODE_OPENLOOP_VF) {
+        /* 切入开环：清掉旧的开环电压/步进，电机安全滑行，
+         * 等用户重新给 vq / rpm */
+        m->v_openloop.d = 0.0f;
+        m->v_openloop.q = 0.0f;
+        m->ol_angle_step = 0.0f;
+    }
     if (mode == FOC_MODE_POSITION) {
         m->target = m->position_rad;
         m->traj.active = 0U;
@@ -431,6 +478,7 @@ void foc_motor_set_mode(foc_motor_t *m, foc_mode_t mode)
     if ((mode != FOC_MODE_OPENLOOP_VF) && (m->calib.valid != 0U)) {
         m->angle_source = FOC_ANGLE_ENCODER_CALIBRATED;
     }
+    return 1U;
 }
 
 void foc_motor_set_target(foc_motor_t *m, float value)

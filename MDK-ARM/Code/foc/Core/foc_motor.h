@@ -143,8 +143,12 @@ uint8_t foc_motor_arm(foc_motor_t *m);
 /** 停止输出回到 IDLE（RUN/CALIB→IDLE） */
 void foc_motor_disarm(foc_motor_t *m);
 
-/** 设置控制模式（会复位相关控制器状态，运行中切换是安全的） */
-void foc_motor_set_mode(foc_motor_t *m, foc_mode_t mode);
+/**
+ * @brief 设置控制模式（会复位相关控制器状态）
+ * @return 1 成功；0 被拒绝：CALIB 中不许切换，
+ *         RUN 中开环→闭环要求已有有效校准（防止绕过 arm 的保护）
+ */
+uint8_t foc_motor_set_mode(foc_motor_t *m, foc_mode_t mode);
 
 /** 设置目标值，语义随当前模式：V / A / RPM / rad */
 void foc_motor_set_target(foc_motor_t *m, float value);

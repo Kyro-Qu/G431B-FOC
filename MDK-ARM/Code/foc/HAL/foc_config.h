@@ -44,7 +44,8 @@
 
 /* ======================== 2. 板级参数（轴 0） ======================== */
 
-/** TIM1 自动重装载值 ARR：170 MHz / 2(DIV2) / 5312 / 2(中心对齐) ≈ 16 kHz */
+/** TIM1 自动重装载值 ARR：170 MHz / 5312 / 2(中心对齐) ≈ 16 kHz
+ *  （CKD=DIV2 只影响死区/滤波时钟 tDTS，不分频计数器时钟） */
 #define FOC_PWM_ARR             5312U
 
 /** 母线电压 V（4S 锂电标称。接可调电源时改这里） */
@@ -57,6 +58,9 @@
 #define FOC_M0_LS_H             0.00002f   /* 相电感 H（20 µH） */
 #define FOC_M0_KE               0.9f       /* 反电动势常数（备用） */
 #define FOC_M0_MAX_CURRENT_A    5.2f       /* 软件电流限制（连续超限跳闸） */
+/* 硬限刻意高于软限（基线版软硬同为 5.2A，8 拍容忍逻辑形同虚设）：
+ * 软限 5.2A×8 拍容忍采样毛刺，硬限 6.5A 单拍针对真实短路/失控，
+ * 远低于功率级承受能力 */
 #define FOC_M0_HARD_CURRENT_A   6.5f       /* 硬电流限制（单拍即跳闸） */
 #define FOC_M0_MAX_RPM          12450.0f
 
@@ -95,7 +99,7 @@
 #define FOC_CALIB_SEARCH_VOLTAGE    0.30f   /* 找 Z 脉冲的开环旋转电压 V */
 #define FOC_CALIB_VOLTAGE_RAMP_MS   200U    /* 电压缓升时间，防电流阶跃 */
 #define FOC_CALIB_BOOTSTRAP_MS      10U     /* 自举电容充电时间 */
-#define FOC_CALIB_NEUTRAL_MS        500U    /* 中点 PWM 观察时间 */
+#define FOC_CALIB_NEUTRAL_MS        2000U   /* 中点 PWM 观察时间（沿用已验证基线值） */
 #define FOC_CALIB_ALIGN_MS          800U    /* D 轴对齐保持时间 */
 #define FOC_CALIB_SETTLE_MS         20U     /* 强制清零后的等待 */
 #define FOC_CALIB_SEARCH_RPM        20.0f   /* 找 Z 的开环转速 */

@@ -46,4 +46,5 @@ foc_g431\foc_calib.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim.h
 foc_g431\foc_calib.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h
 foc_g431\foc_calib.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h
 foc_g431\foc_calib.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h
+foc_g431\foc_calib.o: Code\foc\App\../Core/foc_port.h
 foc_g431\foc_calib.o: Code\foc\App\../HAL/foc_board_g431.h

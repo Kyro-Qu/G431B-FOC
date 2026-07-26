@@ -40,6 +40,9 @@ void foc_telemetry_isr_tick(void);
 void foc_telemetry_set_enable(uint8_t enable);
 uint8_t foc_telemetry_get_enable(void);
 
+/** 临时挂起遥测（cmd_print 阻塞发送期间独占 UART 用），on=1 挂起 */
+void foc_telemetry_suspend(uint8_t on);
+
 #ifdef __cplusplus
 }
 #endif

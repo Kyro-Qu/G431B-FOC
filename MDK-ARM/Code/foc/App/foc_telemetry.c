@@ -25,6 +25,7 @@ static telemetry_frame_t frame = {
 };
 
 static volatile uint8_t telem_enable = FOC_TELEMETRY_DEFAULT_ON;
+static volatile uint8_t telem_suspend = 0U;
 static uint16_t decim_cnt = 0U;
 
 void foc_telemetry_init(void)
@@ -42,11 +43,16 @@ uint8_t foc_telemetry_get_enable(void)
     return telem_enable;
 }
 
+void foc_telemetry_suspend(uint8_t on)
+{
+    telem_suspend = (on != 0U) ? 1U : 0U;
+}
+
 void foc_telemetry_isr_tick(void)
 {
     const foc_motor_t *m0 = &g_foc_motors[0];
 
-    if (telem_enable == 0U) {
+    if ((telem_enable == 0U) || (telem_suspend != 0U)) {
         return;
     }
     if (++decim_cnt < (uint16_t)FOC_TELEMETRY_DIV) {
@@ -54,8 +60,11 @@ void foc_telemetry_isr_tick(void)
     }
     decim_cnt = 0U;
 
-    /* 上一帧还没发完就跳过本帧，绝不在中断里等待 */
-    if (HAL_UART_GetState(&huart2) != HAL_UART_STATE_READY) {
+    /* 上一帧还没发完就跳过本帧，绝不在中断里等待。
+     * 只看发送方向 gState：HAL_UART_GetState() 返回 gState|RxState，
+     * 而 RX 因常驻 DMA 空闲接收几乎永远 BUSY_RX，用组合状态判断
+     * 会导致遥测一帧都发不出去。 */
+    if (huart2.gState != HAL_UART_STATE_READY) {
         return;
     }
 

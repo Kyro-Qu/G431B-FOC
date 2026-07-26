@@ -1,5 +1,11 @@
 # ABZ 增量式编码器驱动设计文档
 
+> **历史文档说明**：本文写于旧版单轴架构时期，原理讲解（采样时序、
+> 半量程法、窗口规划等）仍然有效，但文中出现的旧 API 名
+> （如 foc_set_pwm / foc_tim_irq / foc_vf_set_voltage / foc_feedback /
+> abz_encoder_init 旧签名等）已在对象化重构中被接口表取代。
+> 现行接口以 foc_types.h 与《Docs/03_代码走读.md》为准。
+
 ## 硬件配置
 
 ### 编码器参数

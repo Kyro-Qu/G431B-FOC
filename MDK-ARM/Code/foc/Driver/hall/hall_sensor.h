@@ -32,12 +32,18 @@ extern "C" {
 typedef struct {
     float pole_pairs;        /* 极对数（电角度→机械角换算用） */
     float phase_shift_rad;   /* 霍尔安装偏移（厂家例程约定 300°=5.24rad） */
-    /* 状态 */
+    /* 状态（on_edge 在中断写，update 在快环读；用 edge_seq 同步） */
     volatile uint8_t hall_code;   /* 最近一次读到的 3 位霍尔编码 */
     volatile uint32_t edge_tick;  /* 最近一次扇区切换的时间戳 */
+    volatile uint32_t edge_seq;   /* 扇区切换序号（update 检测新边沿用） */
+    volatile float theta_base;    /* 最近边沿硬同步的扇区边界角 */
+    volatile float speed_e_rads;  /* 电角速度（由扇区切换周期估计） */
+    volatile int8_t direction;    /* 当前旋转方向 +1/-1 */
+    /* update 私有 */
+    uint32_t seen_seq;       /* 已消费到的边沿序号 */
+    float interp_rad;        /* 自边沿起累计的插值角（限幅 ±60°） */
+    float since_edge_s;      /* 距上次边沿的时间（超时衰减转速用） */
     float theta_e;           /* 插值后的电角度 [0, 2π) */
-    float speed_e_rads;      /* 电角速度（由扇区切换周期估计） */
-    int8_t direction;        /* 当前旋转方向 +1/-1 */
 } hall_sensor_t;
 
 /** 初始化（填极对数与相移） */
