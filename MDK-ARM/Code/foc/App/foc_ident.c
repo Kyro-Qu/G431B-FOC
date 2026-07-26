@@ -19,7 +19,7 @@
 #define IDENT_RAMP_MS          1000U   /* 升压+稳定总时长 */
 #define IDENT_MEASURE_MS       400U    /* Rs 平均窗口 */
 #define IDENT_LS_VOLTAGE_V     0.15f   /* Ls 方波幅值（20µH 时纹波约 ±0.23A） */
-#define IDENT_LS_CYCLES        4096U   /* Ls 方波拍数（16kHz 下 256ms） */
+#define IDENT_LS_CYCLES        4096U   /* Ls 记账拍数（每极性2拍，共约512ms） */
 #define IDENT_LS_SKIP          8U      /* 起始丢弃拍数（等电流进入稳态三角波） */
 
 static foc_motor_t *ident_motor = 0;
@@ -39,7 +39,8 @@ static volatile float ls_vs_sum = 0.0f;   /* Σ 极性·(V - Rs·i)·dt */
 static volatile float ls_di_sum = 0.0f;   /* Σ 极性·Δi */
 static volatile uint32_t ls_count = 0U;
 static float ls_i_prev = 0.0f;
-static int8_t ls_pol_applied = 0;         /* 上一拍施加电压的极性 */
+static int8_t ls_pol_applied = 0;         /* 当前施加电压的极性 */
+static uint8_t ls_phase = 0U;             /* 0=过渡拍（刚翻转），1=稳定拍（记账） */
 
 static void ident_set_state(foc_ident_state_t s)
 {
@@ -69,8 +70,12 @@ static void ident_fail(const char *reason)
 
 /*
  * Ls 方波注入钩子：CALIB 状态下由快环每拍调用（电流已采样、电压未选择）。
- * 时序约定：本拍测得的电流增量 Δi 是"上一拍施加电压"的结果，
- * 所以先用 ls_pol_applied 记账，再翻转极性写入下一拍电压。
+ *
+ * 时序要点：写入的比较值经过预装载，在下一次 update 事件才进入 PWM，
+ * "写电压"到"电压完整作用于一个采样间隔"之间隔着一个过渡拍。
+ * 若每拍翻转极性，采样间隔内新旧电压各占一段，Δi 被系统性衰减。
+ * 因此每个极性保持 2 拍：第 1 拍是过渡拍（丢弃），第 2 拍整个采样
+ * 间隔内电压恒定，只把这一拍的 Δi 记账——不依赖装载相位的细节。
  */
 static void ident_ls_hook(foc_motor_t *m)
 {
@@ -83,7 +88,8 @@ static void ident_ls_hook(foc_motor_t *m)
         return;
     }
 
-    if (ls_pol_applied != 0) {
+    if ((ls_pol_applied != 0) && (ls_phase == 1U)) {
+        /* 稳定拍：这个采样间隔内 PWM 输出恒为 pol·V */
         if (ls_count >= IDENT_LS_SKIP) {
             float pol = (float)ls_pol_applied;
 
@@ -96,7 +102,13 @@ static void ident_ls_hook(foc_motor_t *m)
     }
     ls_i_prev = i_now;
 
+    if ((ls_pol_applied != 0) && (ls_phase == 0U)) {
+        ls_phase = 1U;                    /* 保持极性，下一拍是稳定拍 */
+        return;
+    }
+
     ls_pol_applied = (ls_pol_applied == 1) ? -1 : 1;
+    ls_phase = 0U;
     m->v_openloop.d = (float)ls_pol_applied * IDENT_LS_VOLTAGE_V;
     m->v_openloop.q = 0.0f;
 }
@@ -233,6 +245,7 @@ void foc_ident_task(void)
             ls_count = 0U;
             ls_i_prev = 0.0f;
             ls_pol_applied = 0;
+            ls_phase = 0U;
             m->test_hook = ident_ls_hook;
             ident_tick = now;
             ident_set_state(FOC_IDENT_LS);
