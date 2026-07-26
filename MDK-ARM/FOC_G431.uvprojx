@@ -340,7 +340,7 @@
               <MiscControls>--diag_suppress=1,111</MiscControls>
               <Define>USE_HAL_DRIVER,STM32G431xx,ARM_MATH_CM4</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32G4xx_HAL_Driver/Inc;../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32G4xx/Include;../Drivers/CMSIS/Include;./Code/Inc;./Code/foc/App;./Code/foc/Core;./Code/foc/HAL;./Code/foc/Driver;./Code/vofa;./Code/foc/Driver/encoder;./Code/foc/Driver/current</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32G4xx_HAL_Driver/Inc;../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32G4xx/Include;../Drivers/CMSIS/Include;./Code/foc/App;./Code/foc/Core;./Code/foc/HAL;./Code/foc/Driver;./Code/foc/Driver/encoder;./Code/foc/Driver/current;./Code/foc/Driver/hall</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -394,11 +394,6 @@
         <Group>
           <GroupName>Application/User/Core</GroupName>
           <Files>
-            <File>
-              <FileName>vofa.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\Code\vofa\vofa.c</FilePath>
-            </File>
             <File>
               <FileName>main.c</FileName>
               <FileType>1</FileType>
@@ -746,23 +741,33 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>FOC</GroupName>
+          <GroupName>FOC/Core</GroupName>
           <Files>
             <File>
-              <FileName>foc_controller.c</FileName>
+              <FileName>foc_pid.c</FileName>
               <FileType>1</FileType>
-              <FilePath>.\Code\foc\Core\foc_controller.c</FilePath>
+              <FilePath>.\Code\foc\Core\foc_pid.c</FilePath>
             </File>
             <File>
-              <FileName>foc_math.c</FileName>
+              <FileName>foc_svm.c</FileName>
               <FileType>1</FileType>
-              <FilePath>.\Code\foc\Core\foc_math.c</FilePath>
+              <FilePath>.\Code\foc\Core\foc_svm.c</FilePath>
             </File>
             <File>
-              <FileName>foc_config.c</FileName>
+              <FileName>foc_motor.c</FileName>
               <FileType>1</FileType>
-              <FilePath>.\Code\foc\HAL\foc_config.c</FilePath>
+              <FilePath>.\Code\foc\Core\foc_motor.c</FilePath>
             </File>
+            <File>
+              <FileName>foc_observer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Code\foc\Core\foc_observer.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>FOC/App</GroupName>
+          <Files>
             <File>
               <FileName>foc_app.c</FileName>
               <FileType>1</FileType>
@@ -774,6 +779,21 @@
               <FilePath>.\Code\foc\App\foc_calib.c</FilePath>
             </File>
             <File>
+              <FileName>foc_cmd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Code\foc\App\foc_cmd.c</FilePath>
+            </File>
+            <File>
+              <FileName>foc_telemetry.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Code\foc\App\foc_telemetry.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>FOC/Driver</GroupName>
+          <Files>
+            <File>
               <FileName>abz_encoder.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Code\foc\Driver\encoder\abz_encoder.c</FilePath>
@@ -782,6 +802,21 @@
               <FileName>current_shunt.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Code\foc\Driver\current\current_shunt.c</FilePath>
+            </File>
+            <File>
+              <FileName>hall_sensor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Code\foc\Driver\hall\hall_sensor.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>FOC/HAL</GroupName>
+          <Files>
+            <File>
+              <FileName>foc_board_g431.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Code\foc\HAL\foc_board_g431.c</FilePath>
             </File>
           </Files>
         </Group>

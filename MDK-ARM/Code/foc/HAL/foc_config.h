@@ -1,76 +1,112 @@
-#ifndef __FOC_CONFIG_H__
-#define __FOC_CONFIG_H__
+/**
+ * @file    foc_config.h
+ * @brief   FOC 工程用户配置（唯一需要按板卡/电机修改的头文件）
+ *
+ * 分三块：
+ *   1. 轴数量与调度频率
+ *   2. 板级参数（PWM / 母线电压）
+ *   3. 电机参数与控制环默认值（每轴一组）
+ *
+ * 本文件只放宏与常量，不放代码、不包含硬件头文件，
+ * 因此 Core 层与 PC 端单元测试都可以安全包含。
+ */
 
-// 包含板级配置和接口定义
+#ifndef FOC_CONFIG_H
+#define FOC_CONFIG_H
 
-// 包含板级头文件包含
-#include <stdint.h>
-#include "main.h"
+/* ======================== 1. 轴与调度 ======================== */
 
-/* 前向声明，避免循环依赖 */
-typedef struct dq_tag dq_t;
-typedef struct ab_tag ab_t;
-
-/* PWM 参数 (TIM1 170MHz, 中心对齐) */
-#define PWM_CNT     5312u    /* ARR, 对应 16kHz */
-#define PWM_NEUTRAL_CNT (PWM_CNT / 2u)
-#define U_DC        14.23f   /* 母线电压 V  */
-#define PWM_FREQ_HZ 16000.0f // 频率单位:Hz,16kHz  建议15kHz到20kHz
-#define FOC_LOG_MONITOR 1        // 是否启用监视器日志输出,1启用，0禁用
-
-/* 监视器数据（使用指针，更高效） */
-typedef struct {
-    float *angle;      // 电角度指针
-    dq_t  *dq;         // DQ坐标系指针
-    ab_t  *ab;         // AB坐标系指针
-    uint16_t *pwm_a;   // PWM通道A占空比指针
-    uint16_t *pwm_b;   // PWM通道B占空比指针
-    uint16_t *pwm_c;   // PWM通道C占空比指针
-} foc_log_monitor_t;
-
-
-/* 电机参数 (需根据实际电机设置)  */
-typedef struct {
-    float pole_pairs;  /* 极对数  */
-    float Rs;          /* 定子电阻 Ω */
-    float Ls;          /* 定子电感 H */
-    float max_current; /* 峰值最大电流 Apk */
-    float max_voltage; /* 母线电压 V */
-    float Ke;          /* 反电动势常数 Vrms/kRPM */
-    float max_rpm;     /* 最大转速 RPM */
-} foc_motor_info_t;
-
-extern foc_motor_info_t foc_motor_info; // 全局电机参数实例
-extern foc_log_monitor_t foc_log_monitor; // 全局监视器参数实例
-extern TIM_HandleTypeDef htim1; // 定时器1句柄
-extern volatile uint8_t g_foc_pwm_enabled;
-/* 0=outputs off, 1=bootstrap low sides on, 2=normal complementary PWM. */
-extern volatile uint8_t g_foc_pwm_stage;
-
-
-// 传感器模式配置
-// // ABZ 编码器    ADC无感测    霍尔传感器    SPI/IIC UVW霍尔
-
-//电机参数初始化
-void foc_motor_init(void);
-void foc_log_monitor_init(void);
-
-
-// PWM 输出接口
-void foc_timer_init(void);            // 定时器初始化接口
-void foc_pwm_bootstrap_start(void);   // 三路低侧导通，为高侧驱动 bootstrap 电容充电
-void foc_pwm_enable(void);            // 启用PWM输出
-void foc_pwm_disable(void);           // 禁用PWM输出
-void foc_set_pwm(uint32_t ccr_a, uint32_t ccr_b, uint32_t ccr_c, uint8_t sector);
-
-// 电流采样接口
-void foc_get_currents(float *ia, float *ib, float *ic);
-
-// 电角度获取接口
-float foc_get_electrical_angle(void); // 角度传感器接口
-
-
-
-
+/**
+ * 电机轴数量：1 或 2。
+ * 轴 0 绑定本板硬件（TIM1 + ADC1/2 + TIM4 ABZ）。
+ * 轴 1 默认是"虚拟轴"：无功率级/传感器，仅开环数学运行，
+ * 用于演示与验证双轴调度框架；接入第二套功率板时按
+ * 《Docs/05_双电机扩展.md》替换 foc_board_g431.c 中的 M1 绑定。
+ */
+#ifndef FOC_NUM_AXES
+#define FOC_NUM_AXES            2
 #endif
 
+/** PWM / 快环频率 Hz（TIM1 中心对齐，ARR 与之对应） */
+#define FOC_PWM_FREQ_HZ         16000.0f
+
+/** 快环周期 s */
+#define FOC_DT_FAST             (1.0f / FOC_PWM_FREQ_HZ)
+
+/** 慢环（速度/位置环）分频：16 kHz / 16 = 1 kHz */
+#define FOC_SLOW_DIV            16U
+
+/** 遥测分频：16 kHz / 16 = 1 kHz 发送一帧 VOFA */
+#define FOC_TELEMETRY_DIV       16U
+
+/** 上电默认是否开启 VOFA 遥测流 */
+#define FOC_TELEMETRY_DEFAULT_ON 1
+
+/* ======================== 2. 板级参数（轴 0） ======================== */
+
+/** TIM1 自动重装载值 ARR：170 MHz / 2(DIV2) / 5312 / 2(中心对齐) ≈ 16 kHz */
+#define FOC_PWM_ARR             5312U
+
+/** 母线电压 V（4S 锂电标称。接可调电源时改这里） */
+#define FOC_UDC_V               14.23f
+
+/* ======================== 3. 电机 0 参数（DJI 2312S 实测） ======================== */
+
+#define FOC_M0_POLE_PAIRS       6.0f
+#define FOC_M0_RS_OHM           0.1f       /* 相电阻 Ω */
+#define FOC_M0_LS_H             0.00002f   /* 相电感 H（20 µH） */
+#define FOC_M0_KE               0.9f       /* 反电动势常数（备用） */
+#define FOC_M0_MAX_CURRENT_A    5.2f       /* 软件电流限制（连续超限跳闸） */
+#define FOC_M0_HARD_CURRENT_A   6.5f       /* 硬电流限制（单拍即跳闸） */
+#define FOC_M0_MAX_RPM          12450.0f
+
+/* ---- 电机 0 控制环默认值 ---- */
+
+/** 电流环带宽 rad/s：Kp=Ls·ω, Ki=Rs·ω。1000 rad/s ≈ 160 Hz，
+ *  是 ODrive 的默认值，对绝大多数电机都是安全起点 */
+#define FOC_M0_CURRENT_BW_RADS  1000.0f
+
+/** 速度环 PI（输入 RPM 误差 → 输出 Iq 给定 A） */
+#define FOC_M0_VEL_KP           0.005f     /* A/RPM */
+#define FOC_M0_VEL_KI           0.02f      /* A/(RPM·s) */
+#define FOC_M0_VEL_RAMP_RPM_S   2000.0f    /* 目标速度斜坡 */
+#define FOC_M0_VEL_LPF_TF       0.005f     /* 速度反馈低通 5 ms */
+
+/** 位置环 P（输入 rad 误差 → 输出速度给定 RPM） */
+#define FOC_M0_POS_KP           60.0f      /* RPM/rad */
+#define FOC_M0_POS_VEL_LIMIT    1000.0f    /* 位置模式速度上限 RPM */
+
+/** dq 解耦前馈（ω·L·i 交叉项补偿），低感电机低速时影响小，默认开 */
+#define FOC_M0_DECOUPLE         1
+
+/* ---- 编码器（轴 0，TIM4 ABZ） ---- */
+
+/** 4 倍频后的每转计数（512 线 × 4） */
+#define FOC_M0_ENCODER_CPR      2048U
+
+/* ======================== 4. 上电校准参数（轴 0） ======================== */
+/* 电压模式校准，务必从小电压开始调试。流程见 App/foc_calib.c */
+
+#define FOC_CALIB_ALIGN_VOLTAGE     0.30f   /* D 轴对齐电压 V */
+#define FOC_CALIB_SEARCH_VOLTAGE    0.30f   /* 找 Z 脉冲的开环旋转电压 V */
+#define FOC_CALIB_VOLTAGE_RAMP_MS   200U    /* 电压缓升时间，防电流阶跃 */
+#define FOC_CALIB_BOOTSTRAP_MS      10U     /* 自举电容充电时间 */
+#define FOC_CALIB_NEUTRAL_MS        500U    /* 中点 PWM 观察时间 */
+#define FOC_CALIB_ALIGN_MS          800U    /* D 轴对齐保持时间 */
+#define FOC_CALIB_SETTLE_MS         20U     /* 强制清零后的等待 */
+#define FOC_CALIB_SEARCH_RPM        20.0f   /* 找 Z 的开环转速 */
+#define FOC_CALIB_SEARCH_TIMEOUT_MS 10000U  /* 找 Z 超时 → FAULT */
+#define FOC_CALIB_ALIGN_THETA_E     0.0f    /* 对齐用电角度 rad */
+#define FOC_CALIB_DIRECTION         (-1)    /* 编码器方向（本板实测为 -1） */
+#define FOC_CALIB_CURRENT_LIMIT_A   1.5f    /* 校准期软电流限制 */
+#define FOC_CALIB_HARD_LIMIT_A      3.0f    /* 校准期硬电流限制 */
+
+/* ======================== 5. 按键行为 ======================== */
+
+/**
+ * 1：按键在未校准时先启动校准，校准完成后再按进入 RUN（闭环流程）
+ * 0：按键直接以当前模式进入 RUN（开环调试流程）
+ */
+#define FOC_KEY_STARTS_CALIB    1
+
+#endif /* FOC_CONFIG_H */

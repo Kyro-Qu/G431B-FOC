@@ -1,9 +1,13 @@
 #include "current_shunt.h"
 
+#include "main.h"
 #include "foc_config.h"
 #include "stm32g4xx_ll_adc.h"
 #include "stm32g4xx_ll_opamp.h"
 #include <string.h>
+
+/* 本文件内沿用 PWM_CNT 简写指代定时器 ARR */
+#define PWM_CNT FOC_PWM_ARR
 
 /*
  * STM32G431 R3_2 low-side current feedback.
@@ -17,7 +21,13 @@
  * supplies PWM compare values through current_shunt_prepare_pwm().
  */
 
-/* ADC-code-to-current conversion constants. */
+/* ADC-code-to-current conversion constants.
+ *
+ * 硬件真值（火柴FOC bd6s40a_mini_g431 V2 原理图确认）：
+ *   采样电阻 20mΩ；放大网络与 ST B-G431B-ESC1 等效——
+ *   电阻是 ESC1 的 20/3 倍，增益是 ESC1 的 3/20：
+ *   理论有效增益 = 9.14 × 3/20 ≈ 1.371（本值 1.367 为实测标定）。
+ *   两块板的 RSHUNT×GAIN 乘积相同，因此固件电流换算可以通用。 */
 #define CURRENT_ADC_VREF_V      3.3f
 #define CURRENT_ADC_FULL_SCALE  4095.0f
 #define CURRENT_SHUNT_OHM       0.02f

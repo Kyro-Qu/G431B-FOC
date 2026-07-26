@@ -23,7 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "current_shunt.h"
-#include "foc_controller.h"
+#include "foc_app.h"
 #include "stm32g4xx_ll_adc.h"
 /* USER CODE END Includes */
 
@@ -245,7 +245,8 @@ void ADC1_2_IRQHandler(void)
     LL_ADC_ClearFlag_JEOS(ADC2);
     if (current_shunt_adc_irq() != 0U)
     {
-      foc_tim_irq();
+      /* 三相电流重构完成，进入 16 kHz FOC 快环 */
+      foc_app_isr_current_loop();
     }
   }
 

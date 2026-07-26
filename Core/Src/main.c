@@ -22,14 +22,13 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
-#include "foc_controller.h"
-#include "foc_config.h"
 #include "foc_app.h"
 #include "foc_calib.h"
+#include "foc_cmd.h"
+#include "foc_telemetry.h"
 #include "abz_encoder.h"
 #include "current_shunt.h"
 #include <stdio.h>
-#include "vofa.h"
 
 /* USER CODE END Includes */
 
@@ -41,13 +40,8 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-// 调试用全局变量（可在Keil Watch窗口中修改）
-volatile float g_target_voltage = 0.30f;
-volatile float g_target_speed_rpm = 100.0f;
-/* 0: first key press runs the open-loop power-stage test.
- * 1: first key press performs ABZ/Z calibration; press again to run. */
-volatile uint8_t g_startup_require_encoder_calibration = 0U;
-
+/* 开环调试给定移到 foc_app.c：g_m0_openloop_vq / g_m0_openloop_rpm，
+ * 依旧可以在 Keil Watch 中实时修改。 */
 
 /* USER CODE END PD */
 
@@ -240,7 +234,7 @@ void system_power_checkpoint(uint32_t event,
    * an orderly RUN stop clears the archive so the next attempt starts fresh. */
   if ((event == (uint32_t)SYSTEM_CHECKPOINT_CALIB_START) ||
       ((event == (uint32_t)SYSTEM_CHECKPOINT_NORMAL_PWM_ON) &&
-       (calib_state != (uint32_t)FOC_CALIB_PWM_NEUTRAL)))
+       (calib_state != (uint32_t)FOC_CALIB_NEUTRAL)))
   {
     TAMP->BKP13R = SYSTEM_POWER_ARCHIVE_ARMED;
     TAMP->BKP14R = 0U;
@@ -327,22 +321,21 @@ int main(void)
   MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 
-  foc_init();
-  if (foc_get_state() != FOC_STATE_FAULT)
+  foc_app_init();
+  if (foc_app_motor(0)->state != FOC_STATE_FAULT)
   {
     printf("Current offsets U/V/W: %u, %u, %u\r\n",
            g_current_shunt_diag.offset_u,
            g_current_shunt_diag.offset_v,
            g_current_shunt_diag.offset_w);
-    printf("Current sensing ready; press KEY to start open-loop test\r\n");
+    printf("FOC ready, %u axis. Press KEY to run, or type 'help' here.\r\n",
+           (unsigned)FOC_NUM_AXES);
   }
   else
   {
-    printf("Current sensing not ready\r\n");
+    printf("Current sensing not ready, shunt fault=%u\r\n",
+           g_current_shunt_diag.fault_code);
   }
-
-
-
 
   /* USER CODE END 2 */
 
@@ -354,23 +347,9 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    // 使用全局变量动态设置参数（可在Keil中实时修改）
-    if ((current_shunt_is_ready() == 0U) &&
-        (foc_get_state() != FOC_STATE_FAULT))
-    {
-      foc_safety_latch_fault(FOC_SAFETY_FAULT_CURRENT_SENSE);
-      foc_pwm_disable();
-      foc_set_state(FOC_STATE_FAULT);
-    }
+    /* 全部应用逻辑（校准状态机/串口命令/健康监测）都在这里面 */
+    foc_app_task();
 
-    foc_calib_task();
-    if ((foc_calib_is_active() == 0U) &&
-        (foc_get_state() != FOC_STATE_FAULT))
-    {
-      foc_vf_set_voltage(g_target_voltage);       // ���� Q ���ѹ����?
-      foc_set_speed_rpm(g_target_speed_rpm);      // ����Ŀ��ת��
-    }
-		
   }
   /* USER CODE END 3 */
 }
@@ -935,63 +914,26 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /**
- * @brief GPIO外部中断回调函数 - 按键控制启停
- * @param GPIO_Pin 触发中断的GPIO引脚
+ * @brief GPIO 外部中断回调：按键启停 + 编码器 Z 脉冲
  */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     static uint32_t last_press_time = 0;
-    const uint32_t debounce_delay = 200; // 消抖时间 200ms
-    
+    const uint32_t debounce_delay = 200; /* 按键消抖 200ms */
+
     if (GPIO_Pin == KEY_Pin)
     {
         uint32_t current_time = HAL_GetTick();
-        
-        // 消抖处理
+
         if (current_time - last_press_time > debounce_delay)
         {
             last_press_time = current_time;
-            
-            // 切换运行状�?
-            if (foc_get_state() == FOC_STATE_IDLE)
-            {
-                if (current_shunt_is_ready() != 0U)
-                {
-                  if ((g_startup_require_encoder_calibration != 0U) &&
-                      (foc_calib_is_valid() == 0U))
-                  {
-                    foc_calib_start();
-                  }
-                  else
-                  {
-                    if (g_startup_require_encoder_calibration != 0U)
-                    {
-                      foc_set_angle_source(FOC_ANGLE_ENCODER_CALIBRATED);
-                    }
-                    else
-                    {
-                      foc_set_angle_source(FOC_ANGLE_OPEN_LOOP);
-                    }
-                    foc_set_state(FOC_STATE_RUN);
-                    foc_pwm_enable();  // 启动PWM输出
-                  }
-                }
-            }
-            else if (foc_get_state() == FOC_STATE_RUN)
-            {
-              foc_set_state(FOC_STATE_IDLE);
-              foc_pwm_disable(); // 停止PWM输出
-              system_power_checkpoint(SYSTEM_CHECKPOINT_RUN_STOP,
-                                      (uint32_t)g_foc_pwm_stage,
-                                      (uint32_t)g_foc_calib_state,
-                                      (uint32_t)g_foc_state_diag);
-            }
+            foc_app_on_key();
         }
     }
     if (GPIO_Pin == ABZ_Z_Pin) {
       g_abz_z_irq_count++;
       abz_encoder_on_index();
-      // �?CNT 强制�?0，重置位置，置位校准标志
     }
 }
 

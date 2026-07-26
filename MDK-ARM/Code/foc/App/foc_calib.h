@@ -1,171 +1,71 @@
+/**
+ * @file    foc_calib.h
+ * @brief   上电编码器电角度校准状态机（面向 foc_motor_t 对象）
+ *
+ * 为什么需要校准？
+ *   FOC 要求知道"转子磁极此刻指向哪个电角度"。增量编码器上电时
+ *   只知道相对位置，不知道绝对零点，更不知道零点和磁极的关系。
+ *   校准做两件事：
+ *     1. D 轴对齐：给 d 轴通电压把转子"吸"到已知电角度上；
+ *     2. Z 脉冲搜索：慢速开环旋转，记录 Z 脉冲位置与对齐点的
+ *        机械角距离，换算出电角度偏移 offset。
+ *   之后任意时刻：θe = direction × pole_pairs × θmech + offset
+ *
+ * 校准流程（与本板验证过的时序一致）：
+ *   BOOTSTRAP  低边全通给自举电容充电（10ms）
+ *   NEUTRAL    中点 PWM 观察稳定（无电压矢量）
+ *   ALIGN      d 轴电压缓升，把转子吸到 θe = 0
+ *   SETTLE     把对齐位置临时设为编码器零点，稍等稳定
+ *   SEARCH     低速开环旋转找 Z 脉冲，捕获后计算 offset
+ *   DONE/FAIL  成功回 IDLE（结果写入 motor->calib）；失败进 FAULT
+ *
+ * 安全：校准期间电流阈值被压低（软 1.5A / 硬 3.0A），
+ * 任何过流、采样失效、超时都立即断 PWM 并锁存故障。
+ * 结果只存 RAM，每次上电需重新校准（增量编码器的宿命）。
+ */
+
 #ifndef FOC_CALIB_H
 #define FOC_CALIB_H
 
 #include <stdint.h>
+#include "foc_motor.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/*
- * FOC 上电校准模块。
- *
- * 当前版本不保存 Flash，每次上电都重新校准一次。
- * 校准流程大致是：
- *   1. D 轴固定给电压，把转子拉到已知电角度；
- *   2. 把当前位置临时作为增量编码器零点；
- *   3. 慢速开环旋转，等待 ABZ 编码器 Z/index 脉冲；
- *   4. 记录 Z 脉冲到来时的计数，换算成电角度 offset；
- *   5. RUN 阶段用“机械角度 * 极对数 + offset”作为 Park 变换角度。
- */
-
-/* D 轴对齐电压，单位 V。这里是电压模式，不是电流模式，调试时要从小值开始。 */
-#ifndef FOC_CALIB_ALIGN_VOLTAGE
-#define FOC_CALIB_ALIGN_VOLTAGE     0.30f
-#endif
-
-/* 找 Z/index 时的 q 轴开环旋转电压，单位 V。 */
-#ifndef FOC_CALIB_SEARCH_VOLTAGE
-#define FOC_CALIB_SEARCH_VOLTAGE    0.30f
-#endif
-
-/* 校准电压从 0 缓升到目标值，避免静止低阻电机上的电流阶跃。 */
-#ifndef FOC_CALIB_VOLTAGE_RAMP_MS
-#define FOC_CALIB_VOLTAGE_RAMP_MS   200U
-#endif
-
-/* Same startup policy as the validated MCSDK project. */
-#ifndef FOC_CALIB_BOOTSTRAP_MS
-#define FOC_CALIB_BOOTSTRAP_MS      10U
-#endif
-
-/* Observe stable neutral PWM before applying a motor voltage vector. */
-#ifndef FOC_CALIB_NEUTRAL_MS
-#define FOC_CALIB_NEUTRAL_MS        2000U
-#endif
-
-/* 无电流 PI 时的校准保护阈值；连续超限由 16 kHz 电流任务关断 PWM。 */
-#ifndef FOC_CALIB_CURRENT_LIMIT_A
-#define FOC_CALIB_CURRENT_LIMIT_A   1.5f
-#endif
-
-/* Any single valid sample above this level disables PWM immediately. */
-#ifndef FOC_CALIB_HARD_CURRENT_LIMIT_A
-#define FOC_CALIB_HARD_CURRENT_LIMIT_A 3.0f
-#endif
-
-#ifndef FOC_OVERCURRENT_TRIP_SAMPLES
-#define FOC_OVERCURRENT_TRIP_SAMPLES 8U
-#endif
-
-/* 找 Z/index 时的开环机械转速，单位 rpm。速度越低，捕获越稳，但等待时间越长。 */
-#ifndef FOC_CALIB_SEARCH_RPM
-#define FOC_CALIB_SEARCH_RPM        20.0f
-#endif
-
-/* D 轴固定对齐保持时间，单位 ms，用于等待转子机械稳定。 */
-#ifndef FOC_CALIB_ALIGN_MS
-#define FOC_CALIB_ALIGN_MS          800U
-#endif
-
-/* 强制清零后的等待时间，单位 ms，给编码器驱动/控制周期一点处理时间。 */
-#ifndef FOC_CALIB_ZERO_SETTLE_MS
-#define FOC_CALIB_ZERO_SETTLE_MS    20U
-#endif
-
-/* 找 Z/index 的超时时间，单位 ms。超时后进入 FAULT，避免一直带电旋转。 */
-#ifndef FOC_CALIB_SEARCH_TIMEOUT_MS
-#define FOC_CALIB_SEARCH_TIMEOUT_MS 10000U
-#endif
-
-/* D 轴对齐时使用的目标电角度，单位 rad。通常先使用 0。 */
-#ifndef FOC_CALIB_ALIGN_THETA_E
-#define FOC_CALIB_ALIGN_THETA_E     0.0f
-#endif
-
-/*
- * 编码器机械角到电角度的方向。
- * 如果校准后 q 轴给正电压时电机方向/力矩不符合预期，可以优先检查这个符号。
- */
-#ifndef FOC_CALIB_DIRECTION
-#define FOC_CALIB_DIRECTION         -1
-#endif
-
+/** 校准状态 */
 typedef enum {
-    /* 未开始校准。 */
-    FOC_CALIB_IDLE = 0,
-
-    /* Three low-side switches on: charge the high-side bootstrap capacitors. */
-    FOC_CALIB_CHARGE_BOOTSTRAP,
-
-    /* Normal complementary PWM enabled with a zero voltage vector. */
-    FOC_CALIB_PWM_NEUTRAL,
-
-    /* D 轴固定对齐中：给 vd，vq=0，让转子吸到已知电角度。 */
-    FOC_CALIB_ALIGN_D,
-
-    /* 已对齐并强制清零，短暂等待计数器状态稳定。 */
-    FOC_CALIB_CLEAR_AT_ALIGN,
-
-    /* 慢速开环旋转，等待 ABZ 的 Z/index 脉冲。 */
-    FOC_CALIB_SEARCH_INDEX,
-
-    /* 校准成功，RAM 中的 electrical_offset_rad 有效。 */
-    FOC_CALIB_DONE,
-
-    /* 校准失败，通常是超时没有等到 Z/index。 */
-    FOC_CALIB_FAIL
+    FOC_CALIB_IDLE = 0,      /* 未开始 */
+    FOC_CALIB_BOOTSTRAP = 1, /* 低边导通，自举电容充电 */
+    FOC_CALIB_NEUTRAL = 2,   /* 互补 PWM 中点观察 */
+    FOC_CALIB_ALIGN = 3,     /* D 轴对齐（电压缓升） */
+    FOC_CALIB_SETTLE = 4,    /* 对齐点强制清零后等待 */
+    FOC_CALIB_SEARCH = 5,    /* 慢速开环旋转找 Z 脉冲 */
+    FOC_CALIB_DONE = 6,      /* 成功，motor->calib 有效 */
+    FOC_CALIB_FAIL = 7       /* 失败（超时/过流/链路异常） */
 } foc_calib_state_t;
 
-/* 全局可见，便于在 Keil Watch 中直接观察校准状态。 */
-extern volatile foc_calib_state_t g_foc_calib_state;
-/* Runtime-visible calibration commands for Keil Watch and cautious tuning. */
+/** 全局状态镜像：Keil Watch / 断电诊断记录用 */
+extern volatile uint8_t g_foc_calib_state;
+
+/** 运行时可调的校准电压（Keil Watch 里小步试探用） */
 extern volatile float g_foc_calib_align_voltage;
 extern volatile float g_foc_calib_search_voltage;
 
-typedef struct {
-    /* 1 表示本次上电已经得到可信校准结果。 */
-    uint8_t valid;
+/** 启动指定轴的校准（轴必须处于 IDLE 且电流采样就绪） */
+void foc_calib_start(foc_motor_t *m);
 
-    /* 当前校准使用的方向，来自 FOC_CALIB_DIRECTION。 */
-    int8_t direction;
-
-    /* Z/index 到来瞬间捕获到的增量编码器计数。 */
-    int32_t index_offset_cnt;
-
-    /* index_offset_cnt 换算得到的机械角偏移，单位 rad。 */
-    float index_offset_rad;
-
-    /* 给 Park/反 Park 使用的电角度补偿值，单位 rad。 */
-    float electrical_offset_rad;
-} foc_calib_result_t;
-
-/* 启动一次上电校准。通常在 foc_init() 之后调用。 */
-void foc_calib_start(void);
-
-/* 由高频安全检查调用，立即终止校准并锁存 FOC_STATE_FAULT。 */
-void foc_calib_abort(void);
-
-/* 校准状态机任务，需要在主循环中周期调用。 */
+/** 校准状态机任务：主循环中周期调用 */
 void foc_calib_task(void);
 
-/* 返回 1 表示校准模块正在接管 PWM 电压命令，主循环不要覆盖 vd/vq。 */
+/** 1 = 校准状态机正在接管该轴的电压命令 */
 uint8_t foc_calib_is_active(void);
 
-/* 返回 1 表示本次上电校准成功，可以使用 electrical_offset_rad。 */
-uint8_t foc_calib_is_valid(void);
-
-/* 获取当前校准状态，可用于 VOFA/上位机观察流程卡在哪一步。 */
 foc_calib_state_t foc_calib_get_state(void);
-
-/* 获取完整校准结果，包含 Z 计数、机械角偏移、电角度 offset。 */
-const foc_calib_result_t *foc_calib_get_result(void);
-
-/* 只获取电角度 offset，RUN 阶段计算编码器电角度时会用到。 */
-float foc_calib_get_electrical_offset(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif
+#endif /* FOC_CALIB_H */

@@ -1,7 +1,6 @@
 foc_g431\current_shunt.o: Code\foc\Driver\current\current_shunt.c
 foc_g431\current_shunt.o: Code\foc\Driver\current\current_shunt.h
 foc_g431\current_shunt.o: E:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
-foc_g431\current_shunt.o: ./Code/foc/HAL/foc_config.h
 foc_g431\current_shunt.o: ../Core/Inc/main.h
 foc_g431\current_shunt.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h
 foc_g431\current_shunt.o: ../Core/Inc/stm32g4xx_hal_conf.h
@@ -39,5 +38,6 @@ foc_g431\current_shunt.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim.
 foc_g431\current_shunt.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h
 foc_g431\current_shunt.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h
 foc_g431\current_shunt.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h
+foc_g431\current_shunt.o: ./Code/foc/HAL/foc_config.h
 foc_g431\current_shunt.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_ll_opamp.h
 foc_g431\current_shunt.o: E:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h

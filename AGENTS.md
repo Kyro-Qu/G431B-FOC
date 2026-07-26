@@ -210,20 +210,21 @@ Current project example:
 ```text
 Keil project: MDK-ARM\FOC_G431.uvprojx
 Known UV4 path: E:\Keil_v5\UV4\UV4.exe
+Compiler: ARMCC 5.06 (AC5, C99). Do NOT use -j0/-j parallel builds:
+  they intermittently fail with "C3904U could not open via file".
+  If C3904U appears, delete MDK-ARM\FOC_G431\ output dir and rebuild.
 Build command:
-  & 'E:\Keil_v5\UV4\UV4.exe' -b 'MDK-ARM\FOC_G431.uvprojx' -j0
+  & 'E:\Keil_v5\UV4\UV4.exe' -b 'MDK-ARM\FOC_G431.uvprojx' -o 'FOC_G431\build_out.txt'
 Build log:
-  MDK-ARM\FOC_G431\FOC_G431.build_log.htm
-Custom FOC source group:
-  MDK-ARM\Code\foc
-```
-
-Current telemetry example:
-
-```text
-VOFA fdata[0] = open-loop electrical angle
-VOFA fdata[1] = encoder mechanical angle
-VOFA fdata[2] = encoder velocity rpm
-VOFA fdata[3] = ABZ Z/index interrupt count
-VOFA fdata[4] = calibration state
+  MDK-ARM\FOC_G431\build_out.txt (and FOC_G431.build_log.htm)
+FOC library:
+  MDK-ARM\Code\foc  (Core=pure algorithms, Driver, HAL=board binding, App)
+  Architecture docs: Docs\01..05 (Chinese)
+Vendor board reference material (schematics, MCSDK examples):
+  D:\WorkSpace\Project\FOC\Matchstick_HFOC
+Board hardware truth:
+  20 mOhm shunts, effective amp gain ~1.371 (calibrated 1.367);
+  equivalent to ST B-G431B-ESC1 (RSHUNT*GAIN identical, firmware portable).
+Telemetry: VOFA JustFloat 16 ch, table in MDK-ARM\Code\foc\App\foc_telemetry.h
+Serial CLI: USART2 6.5 Mbaud, commands listed by 'help' / Docs\04
 ```

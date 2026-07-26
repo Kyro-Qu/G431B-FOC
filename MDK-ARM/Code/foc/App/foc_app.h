@@ -1,53 +1,62 @@
-#ifndef   __FOC_APP_H__
-#define   __FOC_APP_H__
+/**
+ * @file    foc_app.h
+ * @brief   应用层：多轴电机对象管理、初始化时序、任务调度与按键交互
+ *
+ * 职责边界（参考 README 分层原则）：
+ *   - App 负责：拥有电机对象数组、上电初始化顺序、状态机跳转、
+ *     按键/串口命令入口、慢速健康监测；
+ *   - App 不负责：任何控制算法（在 Core/foc_motor）、
+ *     任何寄存器操作（在 HAL/Driver）。
+ *
+ * 中断链路（轴 0）：
+ *   TIM1 更新中断 ──► current_shunt_tim_update_irq()   (提交 ADC 注入上下文)
+ *   ADC1_2 中断  ──► current_shunt_adc_irq()           (读取并重构三相电流)
+ *                     └─成功─► foc_app_isr_current_loop()
+ *                                ├─► foc_motor_fast_loop(轴0)   16 kHz
+ *                                ├─► foc_motor_fast_loop(轴1)   (虚拟轴)
+ *                                └─► foc_telemetry_isr_tick()   1 kHz 分频
+ */
 
+#ifndef FOC_APP_H
+#define FOC_APP_H
 
+#include "foc_motor.h"
 #include "foc_config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-// 系统/运行状态（安全与生命周期）
-typedef enum {
-    FOC_STATE_IDLE = 0,     // 空闲（不输出�?
-    FOC_STATE_RUN  = 1,     // 运行（输出允许）
-    FOC_STATE_CALIB = 2,
-    FOC_STATE_FAULT= 3      // 故障（锁定，等待清故障）
-} foc_state_t;
+/** 全部电机轴对象（轴 0 = 本板硬件，轴 1 = 虚拟演示轴） */
+extern foc_motor_t g_foc_motors[FOC_NUM_AXES];
 
-/* Global state mirror for Keil Watch. */
+/** 轴 0 状态镜像（Keil Watch / 断电诊断记录用） */
 extern volatile uint8_t g_foc_state_diag;
 
+/** 开环 V/f 模式的调试给定（Keil Watch 可实时修改） */
+extern volatile float g_m0_openloop_vq;
+extern volatile float g_m0_openloop_rpm;
 
-// 控制目标模式
-typedef enum {
-    FOC_CTRL_NONE = 0,        // 不控（或占位�?
-    FOC_CTRL_VF_OPENLOOP,     // 开�?V/f（你现在的）
-    FOC_CTRL_TORQUE_IQ,       // 力矩模式：Iq 给定（电流环闭环�?
-    FOC_CTRL_SPEED,           // 速度模式：速度�?+ 电流�?
-    FOC_CTRL_POSITION         // 位置模式：位置环 + 速度�?+ 电流�?
-} foc_ctrl_mode_t; 
+/** 上电初始化：电机对象 → 编码器 → 电流采样 → PWM 定时器 → 零偏校准 → 通信 */
+void foc_app_init(void);
 
+/** 电流采样完成中断入口（16 kHz，由 ADC ISR 调用） */
+void foc_app_isr_current_loop(void);
 
-// 传感器类型枚�?
-typedef enum {
-    FOC_SENS_NONE = 0,     // 无传感器（纯开环或无感估算�?
-    FOC_SENS_ENCODER,      // 编码�?
-    FOC_SENS_HALL,         // 霍尔
-    FOC_SENS_SENSORLESS    // 无感（SMO/PLL等）
-} foc_sensor_t;
+/** 主循环任务：校准状态机、串口命令、健康监测 */
+void foc_app_task(void);
 
-// 初始化函�?
-void foc_init(void);
+/** 按键入口：IDLE→(校准→)RUN→IDLE 循环 */
+void foc_app_on_key(void);
 
-// 状态管�?
-foc_state_t foc_get_state(void);
-void foc_set_state(foc_state_t state);
+/** 取轴对象指针（idx 越界返回轴 0） */
+foc_motor_t *foc_app_motor(uint8_t idx);
 
-// 控制模式管理
-foc_ctrl_mode_t foc_get_ctrl_mode(void);
-void foc_set_ctrl_mode(foc_ctrl_mode_t mode);
+/** 轴 0 状态（供板级检查点记录） */
+uint8_t foc_app_diag_state(void);
 
-// 传感器类型管�?
-foc_sensor_t foc_get_sensor_type(void);
-void foc_set_sensor_type(foc_sensor_t type);
-
+#ifdef __cplusplus
+}
 #endif
+
+#endif /* FOC_APP_H */
