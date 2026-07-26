@@ -3,7 +3,7 @@
 <title>Static Call Graph - [FOC_G431\FOC_G431.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image FOC_G431\FOC_G431.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060061: Last Updated: Sun Jul 26 21:29:09 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060061: Last Updated: Sun Jul 26 21:48:30 2026
 <BR><P>
 <H3>Maximum Stack Usage =        384 bytes + Unknown(Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
@@ -384,7 +384,7 @@ Global Symbols
 <BR><BR>[Called By]<UL><LI><a href="#[155]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_app_init
 <LI><a href="#[157]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_load
 <LI><a href="#[158]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_motor_init
-<LI><a href="#[147]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_save
+<LI><a href="#[148]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_save
 </UL>
 
 <P><STRONG><a name="[195]"></a>__aeabi_memcpy8</STRONG> (Thumb, 0 bytes, Stack size 0 bytes, memcpya.o(.text), UNUSED)
@@ -415,7 +415,7 @@ Global Symbols
 <LI><a href="#[107]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;MX_ADC2_Init
 <LI><a href="#[106]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;MX_ADC1_Init
 <LI><a href="#[151]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;current_shunt_init
-<LI><a href="#[147]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_save
+<LI><a href="#[148]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_save
 </UL>
 
 <P><STRONG><a name="[198]"></a>__aeabi_memclr8</STRONG> (Thumb, 0 bytes, Stack size 0 bytes, memseta.o(.text), UNUSED)
@@ -846,12 +846,12 @@ Global Symbols
 <LI><a href="#[93]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;FLASH_WaitForLastOperation
 </UL>
 <BR>[Called By]<UL><LI><a href="#[186]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;store_program
-<LI><a href="#[148]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_erase
+<LI><a href="#[147]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_erase
 </UL>
 
 <P><STRONG><a name="[184]"></a>HAL_FLASH_Lock</STRONG> (Thumb, 22 bytes, Stack size 0 bytes, stm32g4xx_hal_flash.o(i.HAL_FLASH_Lock))
 <BR><BR>[Called By]<UL><LI><a href="#[186]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;store_program
-<LI><a href="#[148]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_erase
+<LI><a href="#[147]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_erase
 </UL>
 
 <P><STRONG><a name="[b8]"></a>HAL_FLASH_Program</STRONG> (Thumb, 156 bytes, Stack size 56 bytes, stm32g4xx_hal_flash.o(i.HAL_FLASH_Program))
@@ -867,7 +867,7 @@ Global Symbols
 
 <P><STRONG><a name="[183]"></a>HAL_FLASH_Unlock</STRONG> (Thumb, 28 bytes, Stack size 0 bytes, stm32g4xx_hal_flash.o(i.HAL_FLASH_Unlock))
 <BR><BR>[Called By]<UL><LI><a href="#[186]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;store_program
-<LI><a href="#[148]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_erase
+<LI><a href="#[147]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_erase
 </UL>
 
 <P><STRONG><a name="[bb]"></a>HAL_GPIO_EXTI_Callback</STRONG> (Thumb, 54 bytes, Stack size 8 bytes, main.o(i.HAL_GPIO_EXTI_Callback))
@@ -1702,7 +1702,7 @@ Global Symbols
 <LI><a href="#[62]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;m0_pwm_bootstrap
 </UL>
 
-<P><STRONG><a name="[155]"></a>foc_app_init</STRONG> (Thumb, 360 bytes, Stack size 112 bytes, foc_app.o(i.foc_app_init))
+<P><STRONG><a name="[155]"></a>foc_app_init</STRONG> (Thumb, 408 bytes, Stack size 112 bytes, foc_app.o(i.foc_app_init))
 <BR><BR>[Stack]<UL><LI>Max Depth = 216<LI>Call Chain = foc_app_init &rArr; foc_cmd_print &rArr; HAL_UART_Transmit &rArr; UART_WaitOnFlagUntilTimeout &rArr; UART_EndRxTransfer
 </UL>
 <BR>[Calls]<UL><LI><a href="#[15b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_telemetry_init
@@ -1826,7 +1826,7 @@ Global Symbols
 <LI><a href="#[132]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;cmd_execute
 </UL>
 
-<P><STRONG><a name="[164]"></a>foc_calib_task</STRONG> (Thumb, 640 bytes, Stack size 32 bytes, foc_calib.o(i.foc_calib_task))
+<P><STRONG><a name="[164]"></a>foc_calib_task</STRONG> (Thumb, 656 bytes, Stack size 32 bytes, foc_calib.o(i.foc_calib_task))
 <BR><BR>[Stack]<UL><LI>Max Depth = 116<LI>Call Chain = foc_calib_task &rArr; calib_fail &rArr; foc_motor_openloop_hold &rArr; foc_wrap_0_2pi &rArr; __hardfp_fmodf &rArr; _frem &rArr; _float_epilogue
 </UL>
 <BR>[Calls]<UL><LI><a href="#[8e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
@@ -2068,7 +2068,7 @@ Global Symbols
 <LI><a href="#[17b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_motor_slow_loop
 </UL>
 
-<P><STRONG><a name="[148]"></a>foc_store_erase</STRONG> (Thumb, 72 bytes, Stack size 32 bytes, foc_store.o(i.foc_store_erase))
+<P><STRONG><a name="[147]"></a>foc_store_erase</STRONG> (Thumb, 72 bytes, Stack size 32 bytes, foc_store.o(i.foc_store_erase))
 <BR><BR>[Stack]<UL><LI>Max Depth = 88<LI>Call Chain = foc_store_erase &rArr; HAL_FLASHEx_Erase &rArr; FLASH_WaitForLastOperation
 </UL>
 <BR>[Calls]<UL><LI><a href="#[b4]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_FLASHEx_Erase
@@ -2087,7 +2087,7 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[155]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_app_init
 </UL>
 
-<P><STRONG><a name="[147]"></a>foc_store_save</STRONG> (Thumb, 190 bytes, Stack size 16 bytes, foc_store.o(i.foc_store_save))
+<P><STRONG><a name="[148]"></a>foc_store_save</STRONG> (Thumb, 190 bytes, Stack size 16 bytes, foc_store.o(i.foc_store_save))
 <BR><BR>[Stack]<UL><LI>Max Depth = 128<LI>Call Chain = foc_store_save &rArr; store_program &rArr; HAL_FLASH_Program &rArr; FLASH_WaitForLastOperation
 </UL>
 <BR>[Calls]<UL><LI><a href="#[186]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;store_program
@@ -2561,7 +2561,7 @@ Local Symbols
 <LI><a href="#[13c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_calib_start
 </UL>
 
-<P><STRONG><a name="[12d]"></a>calib_fail</STRONG> (Thumb, 74 bytes, Stack size 16 bytes, foc_calib.o(i.calib_fail))
+<P><STRONG><a name="[12d]"></a>calib_fail</STRONG> (Thumb, 86 bytes, Stack size 16 bytes, foc_calib.o(i.calib_fail))
 <BR><BR>[Stack]<UL><LI>Max Depth = 84<LI>Call Chain = calib_fail &rArr; foc_motor_openloop_hold &rArr; foc_wrap_0_2pi &rArr; __hardfp_fmodf &rArr; _frem &rArr; _float_epilogue
 </UL>
 <BR>[Calls]<UL><LI><a href="#[12f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_motor_restore_current_limits
@@ -2591,7 +2591,7 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[164]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_calib_task
 </UL>
 
-<P><STRONG><a name="[132]"></a>cmd_execute</STRONG> (Thumb, 1988 bytes, Stack size 64 bytes, foc_cmd.o(i.cmd_execute))
+<P><STRONG><a name="[132]"></a>cmd_execute</STRONG> (Thumb, 2054 bytes, Stack size 64 bytes, foc_cmd.o(i.cmd_execute))
 <BR><BR>[Stack]<UL><LI>Max Depth = 280<LI>Call Chain = cmd_execute &rArr; __hardfp_strtof &rArr; __strtod_int &rArr; _local_sscanf &rArr; _scanf_real
 </UL>
 <BR>[Calls]<UL><LI><a href="#[133]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_app_motor
@@ -2609,8 +2609,8 @@ Local Symbols
 <LI><a href="#[143]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_pid_init
 <LI><a href="#[149]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_telemetry_set_enable
 <LI><a href="#[14a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_telemetry_get_enable
-<LI><a href="#[147]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_save
-<LI><a href="#[148]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_erase
+<LI><a href="#[148]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_save
+<LI><a href="#[147]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_erase
 <LI><a href="#[145]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_ident_start
 <LI><a href="#[146]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_ident_apply
 <LI><a href="#[139]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;state_name
@@ -2769,7 +2769,7 @@ Local Symbols
 <BR><BR>[Stack]<UL><LI>Max Depth = 16<LI>Call Chain = store_crc32
 </UL>
 <BR>[Called By]<UL><LI><a href="#[157]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_load
-<LI><a href="#[147]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_save
+<LI><a href="#[148]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_save
 </UL>
 
 <P><STRONG><a name="[186]"></a>store_program</STRONG> (Thumb, 130 bytes, Stack size 40 bytes, foc_store.o(i.store_program))
@@ -2781,7 +2781,7 @@ Local Symbols
 <LI><a href="#[184]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_FLASH_Lock
 <LI><a href="#[18c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;memcmp
 </UL>
-<BR>[Called By]<UL><LI><a href="#[147]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_save
+<BR>[Called By]<UL><LI><a href="#[148]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_save
 </UL>
 
 <P><STRONG><a name="[123]"></a>_fp_digits</STRONG> (Thumb, 334 bytes, Stack size 56 bytes, printfa.o(i._fp_digits), UNUSED)

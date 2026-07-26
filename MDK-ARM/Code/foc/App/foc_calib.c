@@ -70,6 +70,11 @@ static void calib_fail(foc_fault_t fault)
         foc_motor_openloop_hold(m, FOC_CALIB_ALIGN_THETA_E, 0.0f, 0.0f);
         m->pwm_hold = 0U;
         foc_motor_restore_current_limits(m);
+        /* 失败也要关掉"每圈 Z 清零"，否则之后开环运行时
+         * 每圈 Z 硬清零都会丢计数（位置遥测每圈漂移） */
+        if ((m->sensor != 0) && (m->sensor->set_zero_on_index != 0)) {
+            m->sensor->set_zero_on_index(0U);
+        }
         foc_motor_fault(m, fault);
     }
     calib_set_state(FOC_CALIB_FAIL);
@@ -153,6 +158,7 @@ void foc_calib_task(void)
     if (m->state == FOC_STATE_FAULT) {
         foc_motor_restore_current_limits(m);
         m->pwm_hold = 0U;
+        m->sensor->set_zero_on_index(0U);
         calib_set_state(FOC_CALIB_FAIL);
         calib_checkpoint(SYSTEM_CHECKPOINT_CALIB_FAIL);
         return;
@@ -162,6 +168,7 @@ void foc_calib_task(void)
     if (m->state != FOC_STATE_CALIB) {
         foc_motor_restore_current_limits(m);
         m->pwm_hold = 0U;
+        m->sensor->set_zero_on_index(0U);
         foc_motor_openloop_hold(m, FOC_CALIB_ALIGN_THETA_E, 0.0f, 0.0f);
         calib_set_state(FOC_CALIB_FAIL);
         return;

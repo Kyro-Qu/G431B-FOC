@@ -21,6 +21,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 extern UART_HandleTypeDef huart2;
 
@@ -151,6 +152,11 @@ static uint8_t cmd_parse_float(const char *s, float *out)
     if (end == s) {
         return 0U;
     }
+    /* 拒收 NaN/Inf："rpm nan" 之类的输入若被放行，NaN 会经开环角度
+     * 步进绕过快环的电压 NaN 防护，最终变成 CCR=0 的静默低边刹车 */
+    if ((v != v) || ((v - v) != 0.0f)) {
+        return 0U;
+    }
     *out = v;
     return 1U;
 }
@@ -206,14 +212,23 @@ static void cmd_execute(char *line)
         } else if (foc_calib_is_active() != 0U) {
             foc_cmd_print("err: calib busy on another axis\r\n");
         } else {
-            /* `c full`：忽略存储偏移，强制完整校准（对齐+找Z 重新测） */
-            if ((arg != 0) && (strcmp(arg, "full") == 0)) {
+            /* `c full`：忽略存储偏移，强制完整校准（对齐+找Z 重新测）。
+             * 校准若根本没启动（前置检查失败），恢复快速路径资格 */
+            uint8_t want_full = ((arg != 0) &&
+                                 (strcmp(arg, "full") == 0)) ? 1U : 0U;
+            uint8_t was_from_store = m->calib.from_store;
+
+            if (want_full != 0U) {
                 m->calib.from_store = 0U;
             }
             foc_calib_start(m);
             if (m->state == FOC_STATE_CALIB) {
-                foc_cmd_print("M%u calib start\r\n", (unsigned)cur_axis);
+                foc_cmd_print("M%u calib start%s\r\n", (unsigned)cur_axis,
+                              (want_full != 0U) ? " (full)" : "");
             } else {
+                if (want_full != 0U) {
+                    m->calib.from_store = was_from_store;
+                }
                 foc_cmd_print("err: calib rejected, fault=%u\r\n",
                           (unsigned)m->safety.fault_code);
             }
@@ -347,17 +362,28 @@ static void cmd_execute(char *line)
         }
 
     } else if (strcmp(cmd, "save") == 0) {
-        if ((arg != 0) && (strcmp(arg, "e") == 0)) {
+        /* 擦除和保存都会 stall 总线 ~22ms（含 16kHz 保护中断），
+         * 必须停机；转子高速滑行时 22ms 的编码器计数间隙会被
+         * 毛刺滤波丢弃，永久污染电角度——也要等停稳 */
+        if ((m->state == FOC_STATE_RUN) ||
+            (m->state == FOC_STATE_CALIB)) {
+            foc_cmd_print("err: flash op needs IDLE (stalls 22ms)\r\n");
+        } else if (fabsf(m->velocity_filt_rpm) > 60.0f) {
+            foc_cmd_print("err: rotor still spinning, wait for stop\r\n");
+        } else if ((arg != 0) && (strcmp(arg, "e") == 0)) {
             foc_cmd_print(foc_store_erase() != 0U
                               ? "store erased (defaults on next boot)\r\n"
                               : "err: erase failed\r\n");
-        } else if ((m->state == FOC_STATE_RUN) ||
-                   (m->state == FOC_STATE_CALIB)) {
-            foc_cmd_print("err: save needs IDLE (flash erase blocks 22ms)\r\n");
         } else {
-            foc_cmd_print(foc_store_save(m) != 0U
-                              ? "saved to flash (auto-load on boot)\r\n"
-                              : "err: flash save failed\r\n");
+            uint8_t with_calib = ((m->calib.valid != 0U) ||
+                                  (m->calib.from_store != 0U)) ? 1U : 0U;
+
+            if (foc_store_save(m) != 0U) {
+                foc_cmd_print("saved to flash%s (auto-load on boot)\r\n",
+                              (with_calib != 0U) ? "" : ", no calib in store");
+            } else {
+                foc_cmd_print("err: flash save failed\r\n");
+            }
         }
 
     } else if (strcmp(cmd, "log") == 0) {

@@ -87,7 +87,9 @@ static uint8_t app_params_sane(const foc_motor_params_t *p,
     if ((p->pole_pairs <= 0.0f) || (p->rs_ohm <= 0.0f) ||
         (p->ls_henry <= 0.0f) || (p->max_current_a <= 0.0f) ||
         (p->hard_current_a < p->max_current_a) ||
-        (p->max_rpm <= 0.0f) || (c->current_bw_rads <= 0.0f)) {
+        (p->max_rpm <= 0.0f) || (c->current_bw_rads <= 0.0f) ||
+        (c->vel_lpf_tf < 0.0f) || (c->pos_vel_limit_rpm <= 0.0f) ||
+        ((c->traj_enable != 0U) && (c->traj_accel_rpm_s <= 0.0f))) {
         return 0U;
     }
     return 1U;

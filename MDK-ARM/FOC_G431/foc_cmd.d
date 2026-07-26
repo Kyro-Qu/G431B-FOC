@@ -55,3 +55,4 @@ foc_g431\foc_cmd.o: E:\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
 foc_g431\foc_cmd.o: E:\Keil_v5\ARM\ARMCC\Bin\..\include\stdarg.h
 foc_g431\foc_cmd.o: E:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
 foc_g431\foc_cmd.o: E:\Keil_v5\ARM\ARMCC\Bin\..\include\stdlib.h
+foc_g431\foc_cmd.o: E:\Keil_v5\ARM\ARMCC\Bin\..\include\math.h
