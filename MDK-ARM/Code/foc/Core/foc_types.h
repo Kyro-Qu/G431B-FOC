@@ -154,6 +154,10 @@ typedef struct {
     float traj_accel_rpm_s;   /* 轨迹加/减速度 RPM/s */
     /* dq 轴解耦前馈开关：vd -= ω·Lq·iq, vq += ω·Ld·id */
     uint8_t decouple_enable;
+    /* 死区补偿电压 V（0 = 关闭）。死区使每相平均损失约
+     * Udc·t_dead·f_pwm 的电压、方向与相电流相反；按电流符号前馈
+     * 补回可改善低电流时的过零畸变（VESC/MESC 做法） */
+    float deadtime_comp_v;
     /* 堵转保护（仅速度/位置模式；力矩模式堵转是正常工况） */
     uint8_t stall_enable;     /* 1 = 使能堵转检测 */
     float stall_rpm;          /* 转速低于此值视为"不转" */

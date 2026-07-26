@@ -397,6 +397,27 @@ void foc_motor_fast_loop(foc_motor_t *m)
 
     /* 7. 反 Park + SVPWM + 输出 */
     foc_inv_park(&m->v_dq, sin_th, cos_th, &v_ab);
+
+    /* 死区补偿（VESC/MESC）：按相电流符号把死区损失的平均电压
+     * 前馈补回。±0.05A 死区防电流过零处抖振；共模分量会被 SVM
+     * 的中点注入吸收，只有差模起作用——数学上正好是想要的 */
+    if (m->cfg.deadtime_comp_v > 0.0f) {
+        const float vc = m->cfg.deadtime_comp_v;
+        const float th_i = 0.05f;
+        abc_t comp;
+        ab_t comp_ab;
+
+        comp.a = (m->i_abc.a > th_i) ? vc
+                     : ((m->i_abc.a < -th_i) ? -vc : 0.0f);
+        comp.b = (m->i_abc.b > th_i) ? vc
+                     : ((m->i_abc.b < -th_i) ? -vc : 0.0f);
+        comp.c = (m->i_abc.c > th_i) ? vc
+                     : ((m->i_abc.c < -th_i) ? -vc : 0.0f);
+        foc_clarke(&comp, &comp_ab);
+        v_ab.alpha += comp_ab.alpha;
+        v_ab.beta += comp_ab.beta;
+    }
+
     foc_svm_calc(&v_ab, m->drv->u_dc, &m->svm);
     m->drv->set_compare(
         (uint32_t)(m->svm.duty_a * (float)m->drv->full_count),

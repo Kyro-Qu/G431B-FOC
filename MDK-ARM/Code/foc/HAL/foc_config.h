@@ -87,6 +87,11 @@
 /** dq 解耦前馈（ω·L·i 交叉项补偿），低感电机低速时影响小，默认开 */
 #define FOC_M0_DECOUPLE         1
 
+/** 死区补偿电压 V（0 = 关闭）。理论值 = Udc×t_dead×f_pwm
+ *  ≈ 14.23×740ns×16kHz ≈ 0.17V。默认关闭；上机看电流过零处
+ *  有平顶畸变时再从 0.1 开始逐步加（08 篇有判读方法） */
+#define FOC_M0_DEADTIME_COMP_V  0.0f
+
 /** 堵转保护（仅速度/位置模式生效；力矩模式堵转是正常工况）：
  *  |Iq给定| ≥ 95% 限流 且 |转速| < 阈值 持续超时 → FOC_FAULT_STALL */
 #define FOC_M0_STALL_ENABLE     1
