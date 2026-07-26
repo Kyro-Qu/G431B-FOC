@@ -106,8 +106,12 @@ void foc_calib_start(foc_motor_t *m)
 
     calib_motor = m;
     m->calib.valid = 0U;
-    m->calib.direction = (int8_t)FOC_CALIB_DIRECTION;
-    m->calib.electrical_offset_rad = 0.0f;
+    /* from_store：direction/offset 来自 Flash 存储，保留不动，
+     * 走"快速索引搜索"（跳过对齐吸附，只需慢转找 Z 重建零点） */
+    if (m->calib.from_store == 0U) {
+        m->calib.direction = (int8_t)FOC_CALIB_DIRECTION;
+        m->calib.electrical_offset_rad = 0.0f;
+    }
 
     calib_clear_pending_index(m);
     m->sensor->set_zero_on_index(1U);
@@ -180,8 +184,18 @@ void foc_calib_task(void)
         foc_motor_openloop_hold(m, FOC_CALIB_ALIGN_THETA_E, 0.0f, 0.0f);
         if (calib_elapsed(now, calib_tick, FOC_CALIB_NEUTRAL_MS)) {
             calib_tick = now;
-            calib_set_state(FOC_CALIB_ALIGN);
-            calib_checkpoint(SYSTEM_CHECKPOINT_CALIB_ALIGN);
+            if (m->calib.from_store != 0U) {
+                /* 快速索引搜索（ODrive index_search 语义）：
+                 * 偏移已知，无需对齐吸附，直接慢转找 Z 重建编码器零点 */
+                calib_clear_pending_index(m);
+                m->sensor->set_zero_on_index(1U);
+                foc_motor_openloop_spin(m, FOC_CALIB_SEARCH_RPM, 0.0f, 0.0f);
+                calib_set_state(FOC_CALIB_SEARCH);
+                calib_checkpoint(SYSTEM_CHECKPOINT_CALIB_SEARCH);
+            } else {
+                calib_set_state(FOC_CALIB_ALIGN);
+                calib_checkpoint(SYSTEM_CHECKPOINT_CALIB_ALIGN);
+            }
         }
         break;
 
@@ -222,13 +236,19 @@ void foc_calib_task(void)
             /* Z 脉冲到来：对齐点 → Z 点的机械角距离换算电角度偏移。
              * 之后 θm 从 Z 点起算，所以 offset = θe(Z)：
              *   θe(Z) = θe(对齐) + dir·pp·Δθm */
-            float index_rad = foc_wrap_0_2pi(
-                (float)index_cnt * m->sensor->rad_per_cnt);
             uint32_t pm;
 
-            m->calib.electrical_offset_rad = foc_wrap_0_2pi(
-                FOC_CALIB_ALIGN_THETA_E +
-                ((float)m->calib.direction * m->params.pole_pairs * index_rad));
+            /* 存储偏移：Z 点的电角度是电机的固有属性，直接沿用；
+             * 全新校准：由对齐点到 Z 点的机械角距离计算 */
+            if (m->calib.from_store == 0U) {
+                float index_rad = foc_wrap_0_2pi(
+                    (float)index_cnt * m->sensor->rad_per_cnt);
+
+                m->calib.electrical_offset_rad = foc_wrap_0_2pi(
+                    FOC_CALIB_ALIGN_THETA_E +
+                    ((float)m->calib.direction * m->params.pole_pairs *
+                     index_rad));
+            }
             m->calib.valid = 1U;
 
             /* 校准已建立零点，此后关闭"每圈 Z 清零"：Z 中断锁存的

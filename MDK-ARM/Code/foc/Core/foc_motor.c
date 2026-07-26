@@ -177,6 +177,25 @@ static void foc_motor_slow_loop(foc_motor_t *m)
 
     m->iq_ref = foc_clampf(m->iq_ref,
                            -m->params.max_current_a, m->params.max_current_a);
+
+    /* 堵转保护（VESC 思路）：速度/位置模式下电流给定顶到限幅、
+     * 转子却几乎不动，持续超时说明卡死/负载超能力/编码器失效——
+     * 继续满电流灌注只会烧电机，跳闸。力矩模式的堵转是正常工况不查。 */
+    if ((m->cfg.stall_enable != 0U) &&
+        ((m->mode == FOC_MODE_VELOCITY) || (m->mode == FOC_MODE_POSITION)) &&
+        (m->state == FOC_STATE_RUN)) {
+        if ((fabsf(m->iq_ref) >= (0.95f * m->params.max_current_a)) &&
+            (fabsf(m->velocity_filt_rpm) < m->cfg.stall_rpm)) {
+            if (m->stall_cnt < 0xFFFFU) {
+                ++m->stall_cnt;
+            }
+            if (m->stall_cnt >= m->stall_trip_ticks) {
+                foc_motor_fault(m, FOC_FAULT_STALL);
+            }
+        } else {
+            m->stall_cnt = 0U;
+        }
+    }
 }
 
 /* ======================== 生命周期 ======================== */
@@ -208,6 +227,7 @@ void foc_motor_init(foc_motor_t *m,
     m->pwm_hold = 0U;
 
     m->calib.valid = 0U;
+    m->calib.from_store = 0U;
     m->calib.direction = 1;
     m->calib.electrical_offset_rad = 0.0f;
 
@@ -234,6 +254,10 @@ void foc_motor_init(foc_motor_t *m,
     m->traj.xf = 0.0f;
     m->traj_target_latch = 0.0f;
     m->test_hook = 0;
+    m->stall_cnt = 0U;
+    /* 慢环节拍 = dt_fast·slow_div，把超时 ms 换算成慢环拍数 */
+    m->stall_trip_ticks = (uint16_t)(((float)cfg->stall_timeout_ms * 1e-3f) /
+                                     (dt_fast * (float)m->slow_div));
 
     /* 安全限制默认取电机参数 */
     m->safety.peak_current_a = 0.0f;
@@ -362,6 +386,13 @@ void foc_motor_fast_loop(foc_motor_t *m)
         m->v_dq.q = vq;
     }
 
+    /* NaN 防护（VESC 惯例）：参数异常/数值发散产生的 NaN 一旦流进
+     * SVPWM 会输出无意义占空比。NaN != NaN 是最廉价的检测 */
+    if ((m->v_dq.d != m->v_dq.d) || (m->v_dq.q != m->v_dq.q)) {
+        foc_motor_fault(m, FOC_FAULT_CONTROL_NAN);
+        return;
+    }
+
     foc_voltage_circle_limit(&m->v_dq, m->drv->u_dc * INV_SQRT_3);
 
     /* 7. 反 Park + SVPWM + 输出 */
@@ -398,6 +429,7 @@ uint8_t foc_motor_arm(foc_motor_t *m)
     m->vel_ref_rpm = 0.0f;
     m->iq_ref = 0.0f;
     m->slow_cnt = 0U;
+    m->stall_cnt = 0U;
     m->safety.consecutive_over_limit = 0U;
 
     /* 位置模式上电即"保持当前位置"，避免使能瞬间飞车 */

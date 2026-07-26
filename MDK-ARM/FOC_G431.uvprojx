@@ -828,6 +828,11 @@
               <FileType>1</FileType>
               <FilePath>.\Code\foc\HAL\foc_board_g431.c</FilePath>
             </File>
+            <File>
+              <FileName>foc_store.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Code\foc\HAL\foc_store.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

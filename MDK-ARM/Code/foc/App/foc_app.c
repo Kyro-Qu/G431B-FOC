@@ -10,6 +10,7 @@
 #include "foc_telemetry.h"
 #include "main.h"
 #include "../HAL/foc_board_g431.h"
+#include "../HAL/foc_store.h"
 #include "../Driver/current/current_shunt.h"
 #include "../Driver/encoder/abz_encoder.h"
 
@@ -43,6 +44,9 @@ static const foc_ctrl_cfg_t m0_cfg = {
     .traj_enable       = FOC_M0_TRAJ_ENABLE,
     .traj_accel_rpm_s  = FOC_M0_TRAJ_ACC_RPM_S,
     .decouple_enable   = FOC_M0_DECOUPLE,
+    .stall_enable      = FOC_M0_STALL_ENABLE,
+    .stall_rpm         = FOC_M0_STALL_RPM,
+    .stall_timeout_ms  = FOC_M0_STALL_TIMEOUT_MS,
 };
 
 #if FOC_NUM_AXES >= 2
@@ -68,20 +72,58 @@ static const foc_ctrl_cfg_t m1_cfg = {
     .traj_enable       = 1U,
     .traj_accel_rpm_s  = 4000.0f,
     .decouple_enable   = 0U,
+    .stall_enable      = 0U,     /* 虚拟轴没有真实电流，不查堵转 */
+    .stall_rpm         = 30.0f,
+    .stall_timeout_ms  = 1000U,
 };
 #endif
 
 /* ---------------- API ---------------- */
 
+/* 上电参数自检：非法参数直接 FAULT，好过带病闭环 */
+static uint8_t app_params_sane(const foc_motor_params_t *p,
+                               const foc_ctrl_cfg_t *c)
+{
+    if ((p->pole_pairs <= 0.0f) || (p->rs_ohm <= 0.0f) ||
+        (p->ls_henry <= 0.0f) || (p->max_current_a <= 0.0f) ||
+        (p->hard_current_a < p->max_current_a) ||
+        (p->max_rpm <= 0.0f) || (c->current_bw_rads <= 0.0f)) {
+        return 0U;
+    }
+    return 1U;
+}
+
 void foc_app_init(void)
 {
+    foc_motor_params_t m0_p = m0_params;
+    foc_ctrl_cfg_t m0_c = m0_cfg;
+    int8_t stored_dir = 0;
+    float stored_offset = 0.0f;
+    foc_store_status_t store_st;
+
+    /* 0. Flash 参数加载：有有效存储则覆盖 foc_config.h 默认值 */
+    store_st = foc_store_load(&m0_p, &m0_c, &stored_dir, &stored_offset);
+
     /* 1. 电机对象初始化（含电流环带宽自整定） */
     foc_motor_init(&g_foc_motors[0],
                    &g_board_m0_driver,
                    &g_board_m0_current,
                    &g_board_m0_sensor,
-                   &m0_params, &m0_cfg,
+                   &m0_p, &m0_c,
                    FOC_DT_FAST, FOC_SLOW_DIV);
+
+    /* 存储的校准偏移：标记 from_store，等 Z 重建零点后即可闭环
+     * （按键/`c` 触发的校准会走快速索引搜索） */
+    if (store_st == FOC_STORE_LOADED_CALIB) {
+        g_foc_motors[0].calib.from_store = 1U;
+        g_foc_motors[0].calib.direction = stored_dir;
+        g_foc_motors[0].calib.electrical_offset_rad = stored_offset;
+    }
+
+    /* 参数自检（存储数据损坏/配置手滑的最后防线） */
+    if (app_params_sane(&m0_p, &m0_c) == 0U) {
+        foc_motor_fault(&g_foc_motors[0], FOC_FAULT_BAD_CONFIG);
+    }
 
 #if FOC_NUM_AXES >= 2
     foc_motor_init(&g_foc_motors[1],
@@ -115,10 +157,26 @@ void foc_app_init(void)
     /* 6. 通信：串口命令行 + VOFA 遥测 */
     foc_cmd_init();
     foc_telemetry_init();
+
+    /* 7. 稳定性设施：CPU 统计 + 独立看门狗。
+     *    看门狗必须放在所有阻塞初始化（含 130ms 零偏校准）之后 */
+    foc_board_dwt_init();
+#if FOC_WATCHDOG_ENABLE
+    foc_board_watchdog_init(FOC_WATCHDOG_TIMEOUT_MS);
+#endif
+
+    if (store_st != FOC_STORE_EMPTY) {
+        foc_cmd_print("config loaded from flash%s (Rs=%.4f Ls=%.2fuH)\r\n",
+                      (store_st == FOC_STORE_LOADED_CALIB)
+                          ? " with calib offset" : "",
+                      (double)m0_p.rs_ohm, (double)(m0_p.ls_henry * 1e6f));
+    }
 }
 
 void foc_app_isr_current_loop(void)
 {
+    uint32_t t0 = foc_board_cycles();
+
     foc_motor_fast_loop(&g_foc_motors[0]);
 
 #if FOC_NUM_AXES >= 2
@@ -128,11 +186,16 @@ void foc_app_isr_current_loop(void)
 #endif
 
     foc_telemetry_isr_tick();
+    foc_board_cpu_sample(foc_board_cycles() - t0);
 }
 
 void foc_app_task(void)
 {
     foc_motor_t *m0 = &g_foc_motors[0];
+
+#if FOC_WATCHDOG_ENABLE
+    foc_board_watchdog_kick();
+#endif
 
     /* 校准与参数辨识状态机 */
     foc_calib_task();

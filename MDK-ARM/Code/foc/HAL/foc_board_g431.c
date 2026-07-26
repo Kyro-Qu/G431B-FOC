@@ -227,3 +227,64 @@ const foc_driver_if_t g_board_m1_driver = {
 };
 
 #endif /* FOC_NUM_AXES >= 2 */
+
+/* ======================== 系统级稳定性设施 ======================== */
+
+foc_cpu_diag_t g_foc_cpu_diag = {0};
+
+/* 一拍快环的周期预算：一个 PWM 周期的 CPU 时钟数 */
+#define FOC_CYCLES_PER_TICK (170000000.0f / FOC_PWM_FREQ_HZ)
+
+void foc_board_dwt_init(void)
+{
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0U;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
+uint32_t foc_board_cycles(void)
+{
+    return DWT->CYCCNT;
+}
+
+void foc_board_cpu_sample(uint32_t cycles)
+{
+    g_foc_cpu_diag.last_cycles = cycles;
+    if (cycles > g_foc_cpu_diag.max_cycles) {
+        g_foc_cpu_diag.max_cycles = cycles;
+    }
+    g_foc_cpu_diag.load_pct = 100.0f * (float)cycles / FOC_CYCLES_PER_TICK;
+}
+
+/*
+ * IWDG 直接寄存器操作（HAL IWDG 模块未启用，寄存器序列很短）：
+ * LSI ≈ 32 kHz，预分频 /32 → 计数节拍 1 ms，RLR 直接填毫秒数。
+ * LSI 精度 ±5% 左右，超时按标称值放余量即可。
+ */
+void foc_board_watchdog_init(uint32_t timeout_ms)
+{
+    uint32_t reload = timeout_ms;
+
+    if (reload > 4095U) {
+        reload = 4095U;
+    }
+    if (reload == 0U) {
+        reload = 1U;
+    }
+
+    /* 调试器停在断点时冻结看门狗计数，避免调试即复位 */
+    SET_BIT(DBGMCU->APB1FZR1, DBGMCU_APB1FZR1_DBG_IWDG_STOP);
+
+    IWDG->KR = 0x0000CCCCU;   /* 启动看门狗 */
+    IWDG->KR = 0x00005555U;   /* 解锁 PR/RLR */
+    IWDG->PR = 3U;            /* LSI/32 → 1 kHz */
+    IWDG->RLR = reload;
+    while (IWDG->SR != 0U) {  /* 等待寄存器更新完成（几个 LSI 周期） */
+    }
+    IWDG->KR = 0x0000AAAAU;   /* 首次喂狗，装载 RLR */
+}
+
+void foc_board_watchdog_kick(void)
+{
+    IWDG->KR = 0x0000AAAAU;
+}

@@ -49,6 +49,30 @@ extern const foc_driver_if_t g_board_m1_driver;
  */
 void foc_board_init(void);
 
+/* ---- 系统级稳定性设施 ---- */
+
+/** 快环 CPU 占用统计（DWT 周期计数，'s' 命令显示） */
+typedef struct {
+    volatile uint32_t last_cycles;  /* 最近一拍快环执行周期数 */
+    volatile uint32_t max_cycles;   /* 上电以来最大值 */
+    volatile float load_pct;        /* 最近一拍占用率 %（预算 = 一个 PWM 周期） */
+} foc_cpu_diag_t;
+
+extern foc_cpu_diag_t g_foc_cpu_diag;
+
+/** DWT 周期计数器使能（CPU 统计用），上电调用一次 */
+void foc_board_dwt_init(void);
+/** 读当前 DWT 周期计数 */
+uint32_t foc_board_cycles(void);
+/** 提交一次快环执行周期数（在 ISR 出口调用） */
+void foc_board_cpu_sample(uint32_t cycles);
+
+/** 独立看门狗启动（IWDG，LSI 时钟，一旦启动不可关闭；
+ *  已配置调试器断点冻结）。在所有阻塞初始化完成后调用 */
+void foc_board_watchdog_init(uint32_t timeout_ms);
+/** 喂狗（主循环每圈调用） */
+void foc_board_watchdog_kick(void);
+
 #ifdef __cplusplus
 }
 #endif

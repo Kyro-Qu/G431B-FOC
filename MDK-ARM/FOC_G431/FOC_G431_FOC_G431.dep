@@ -40,12 +40,12 @@ I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h)(0x698C95F8)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h)(0x698C95F8)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h)(0x698C95F8)
 I (./Code/foc/App/foc_app.h)(0x6A65D6B9)
-I (./Code/foc/Core/foc_motor.h)(0x6A65F696)
-I (./Code/foc/Core/foc_types.h)(0x6A65E0BF)
+I (./Code/foc/Core/foc_motor.h)(0x6A660991)
+I (./Code/foc/Core/foc_types.h)(0x6A660966)
 I (./Code/foc/Core/foc_pid.h)(0x6A65D401)
 I (./Code/foc/Core/foc_svm.h)(0x6A65D4A7)
 I (./Code/foc/Core/foc_traj.h)(0x6A65E09D)
-I (./Code/foc/HAL/foc_config.h)(0x6A660159)
+I (./Code/foc/HAL/foc_config.h)(0x6A660AEA)
 I (./Code/foc/App/foc_calib.h)(0x6A65D67E)
 I (./Code/foc/App/foc_cmd.h)(0x6A65E150)
 I (./Code/foc/App/foc_telemetry.h)(0x6A65F81C)
@@ -95,12 +95,12 @@ I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h)(0x698C95F8)
 I (../Core/Inc/stm32g4xx_it.h)(0x6A599245)
 I (./Code/foc/Driver/current/current_shunt.h)(0x6A651A4D)
 I (./Code/foc/App/foc_app.h)(0x6A65D6B9)
-I (./Code/foc/Core/foc_motor.h)(0x6A65F696)
-I (./Code/foc/Core/foc_types.h)(0x6A65E0BF)
+I (./Code/foc/Core/foc_motor.h)(0x6A660991)
+I (./Code/foc/Core/foc_types.h)(0x6A660966)
 I (./Code/foc/Core/foc_pid.h)(0x6A65D401)
 I (./Code/foc/Core/foc_svm.h)(0x6A65D4A7)
 I (./Code/foc/Core/foc_traj.h)(0x6A65E09D)
-I (./Code/foc/HAL/foc_config.h)(0x6A660159)
+I (./Code/foc/HAL/foc_config.h)(0x6A660AEA)
 F (../Core/Src/stm32g4xx_hal_msp.c)(0x6A651414)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\stm32g4xx_hal_msp.o --omf_browse foc_g431\stm32g4xx_hal_msp.crf --depend foc_g431\stm32g4xx_hal_msp.d)
 I (../Core/Inc/main.h)(0x6A656D33)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h)(0x698C95F8)
@@ -961,7 +961,7 @@ I (Code\foc\Core\foc_utils.h)(0x6A65D3BC)
 I (E:\Keil_v5\ARM\ARMCC\include\math.h)(0x569DEA3A)
 F (.\Code\foc\Core\foc_svm.c)(0x6A65D4B2)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_svm.o --omf_browse foc_g431\foc_svm.crf --depend foc_g431\foc_svm.d)
 I (Code\foc\Core\foc_svm.h)(0x6A65D4A7)
-I (Code\foc\Core\foc_types.h)(0x6A65E0BF)
+I (Code\foc\Core\foc_types.h)(0x6A660966)
 I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
 I (Code\foc\Core\foc_transform.h)(0x6A65D497)
 I (Code\foc\Core\foc_utils.h)(0x6A65D3BC)
@@ -992,9 +992,9 @@ I (E:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include\dsp\transform_functions.h)(0x698F33E1
 I (E:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include\dsp\filtering_functions.h)(0x698F33E1)
 I (E:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include\dsp\quaternion_math_functions.h)(0x698F33E1)
 I (E:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include\dsp\window_functions.h)(0x698F33E1)
-F (.\Code\foc\Core\foc_motor.c)(0x6A65F643)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_motor.o --omf_browse foc_g431\foc_motor.crf --depend foc_g431\foc_motor.d)
-I (Code\foc\Core\foc_motor.h)(0x6A65F696)
-I (Code\foc\Core\foc_types.h)(0x6A65E0BF)
+F (.\Code\foc\Core\foc_motor.c)(0x6A6609AB)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_motor.o --omf_browse foc_g431\foc_motor.crf --depend foc_g431\foc_motor.d)
+I (Code\foc\Core\foc_motor.h)(0x6A660991)
+I (Code\foc\Core\foc_types.h)(0x6A660966)
 I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
 I (Code\foc\Core\foc_pid.h)(0x6A65D401)
 I (Code\foc\Core\foc_svm.h)(0x6A65D4A7)
@@ -1031,7 +1031,7 @@ I (E:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include\dsp\window_functions.h)(0x698F33E1)
 I (Code\foc\Core\foc_port.h)(0x6A65F45B)
 F (.\Code\foc\Core\foc_observer.c)(0x6A66000F)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_observer.o --omf_browse foc_g431\foc_observer.crf --depend foc_g431\foc_observer.d)
 I (Code\foc\Core\foc_observer.h)(0x6A65DC6A)
-I (Code\foc\Core\foc_types.h)(0x6A65E0BF)
+I (Code\foc\Core\foc_types.h)(0x6A660966)
 I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
 I (Code\foc\Core\foc_utils.h)(0x6A65D3BC)
 I (E:\Keil_v5\ARM\ARMCC\include\math.h)(0x569DEA3A)
@@ -1067,15 +1067,15 @@ I (Code\foc\Core\foc_traj.h)(0x6A65E09D)
 I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
 I (Code\foc\Core\foc_utils.h)(0x6A65D3BC)
 I (E:\Keil_v5\ARM\ARMCC\include\math.h)(0x569DEA3A)
-F (.\Code\foc\App\foc_app.c)(0x6A65E172)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_app.o --omf_browse foc_g431\foc_app.crf --depend foc_g431\foc_app.d)
+F (.\Code\foc\App\foc_app.c)(0x6A660AAB)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_app.o --omf_browse foc_g431\foc_app.crf --depend foc_g431\foc_app.d)
 I (Code\foc\App\foc_app.h)(0x6A65D6B9)
-I (./Code/foc/Core/foc_motor.h)(0x6A65F696)
-I (./Code/foc/Core/foc_types.h)(0x6A65E0BF)
+I (./Code/foc/Core/foc_motor.h)(0x6A660991)
+I (./Code/foc/Core/foc_types.h)(0x6A660966)
 I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
 I (./Code/foc/Core/foc_pid.h)(0x6A65D401)
 I (./Code/foc/Core/foc_svm.h)(0x6A65D4A7)
 I (./Code/foc/Core/foc_traj.h)(0x6A65E09D)
-I (./Code/foc/HAL/foc_config.h)(0x6A660159)
+I (./Code/foc/HAL/foc_config.h)(0x6A660AEA)
 I (Code\foc\App\foc_calib.h)(0x6A65D67E)
 I (Code\foc\App\foc_cmd.h)(0x6A65E150)
 I (Code\foc\App\foc_ident.h)(0x6A65E111)
@@ -1116,20 +1116,21 @@ I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim.h)(0x698C95F8)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h)(0x698C95F8)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h)(0x698C95F8)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h)(0x698C95F8)
-I (Code\foc\App\../HAL/foc_board_g431.h)(0x6A65D63D)
+I (Code\foc\App\../HAL/foc_board_g431.h)(0x6A6609BB)
+I (Code\foc\App\../HAL/foc_store.h)(0x6A6609F9)
 I (Code\foc\App\../Driver/current/current_shunt.h)(0x6A651A4D)
 I (Code\foc\App\../Driver/encoder/abz_encoder.h)(0x6A65D5B5)
 I (./Code/foc/Core/foc_utils.h)(0x6A65D3BC)
 I (E:\Keil_v5\ARM\ARMCC\include\math.h)(0x569DEA3A)
-F (.\Code\foc\App\foc_calib.c)(0x6A65FC71)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_calib.o --omf_browse foc_g431\foc_calib.crf --depend foc_g431\foc_calib.d)
+F (.\Code\foc\App\foc_calib.c)(0x6A660A52)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_calib.o --omf_browse foc_g431\foc_calib.crf --depend foc_g431\foc_calib.d)
 I (Code\foc\App\foc_calib.h)(0x6A65D67E)
 I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
-I (./Code/foc/Core/foc_motor.h)(0x6A65F696)
-I (./Code/foc/Core/foc_types.h)(0x6A65E0BF)
+I (./Code/foc/Core/foc_motor.h)(0x6A660991)
+I (./Code/foc/Core/foc_types.h)(0x6A660966)
 I (./Code/foc/Core/foc_pid.h)(0x6A65D401)
 I (./Code/foc/Core/foc_svm.h)(0x6A65D4A7)
 I (./Code/foc/Core/foc_traj.h)(0x6A65E09D)
-I (./Code/foc/HAL/foc_config.h)(0x6A660159)
+I (./Code/foc/HAL/foc_config.h)(0x6A660AEA)
 I (./Code/foc/Core/foc_utils.h)(0x6A65D3BC)
 I (E:\Keil_v5\ARM\ARMCC\include\math.h)(0x569DEA3A)
 I (../Core/Inc/main.h)(0x6A656D33)
@@ -1169,23 +1170,25 @@ I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h)(0x698C95F8)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h)(0x698C95F8)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h)(0x698C95F8)
 I (Code\foc\App\../Core/foc_port.h)(0x6A65F45B)
-I (Code\foc\App\../HAL/foc_board_g431.h)(0x6A65D63D)
-F (.\Code\foc\App\foc_cmd.c)(0x6A65FCA0)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_cmd.o --omf_browse foc_g431\foc_cmd.crf --depend foc_g431\foc_cmd.d)
+I (Code\foc\App\../HAL/foc_board_g431.h)(0x6A6609BB)
+F (.\Code\foc\App\foc_cmd.c)(0x6A660AB0)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_cmd.o --omf_browse foc_g431\foc_cmd.crf --depend foc_g431\foc_cmd.d)
 I (Code\foc\App\foc_cmd.h)(0x6A65E150)
 I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
 I (Code\foc\App\foc_app.h)(0x6A65D6B9)
-I (./Code/foc/Core/foc_motor.h)(0x6A65F696)
-I (./Code/foc/Core/foc_types.h)(0x6A65E0BF)
+I (./Code/foc/Core/foc_motor.h)(0x6A660991)
+I (./Code/foc/Core/foc_types.h)(0x6A660966)
 I (./Code/foc/Core/foc_pid.h)(0x6A65D401)
 I (./Code/foc/Core/foc_svm.h)(0x6A65D4A7)
 I (./Code/foc/Core/foc_traj.h)(0x6A65E09D)
-I (./Code/foc/HAL/foc_config.h)(0x6A660159)
+I (./Code/foc/HAL/foc_config.h)(0x6A660AEA)
 I (Code\foc\App\foc_calib.h)(0x6A65D67E)
 I (Code\foc\App\foc_ident.h)(0x6A65E111)
 I (Code\foc\App\foc_telemetry.h)(0x6A65F81C)
 I (Code\foc\App\../Core/foc_port.h)(0x6A65F45B)
 I (../Drivers/CMSIS/Include/cmsis_compiler.h)(0x698C95E0)
 I (../Drivers/CMSIS/Include/cmsis_armcc.h)(0x698C95E0)
+I (Code\foc\App\../HAL/foc_board_g431.h)(0x6A6609BB)
+I (Code\foc\App\../HAL/foc_store.h)(0x6A6609F9)
 I (../Core/Inc/main.h)(0x6A656D33)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h)(0x698C95F8)
 I (../Core/Inc/stm32g4xx_hal_conf.h)(0x6A599246)
@@ -1228,12 +1231,12 @@ F (.\Code\foc\App\foc_telemetry.c)(0x6A65F7B7)(--c99 -c --cpu Cortex-M4.fp.sp -D
 I (Code\foc\App\foc_telemetry.h)(0x6A65F81C)
 I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
 I (Code\foc\App\foc_app.h)(0x6A65D6B9)
-I (./Code/foc/Core/foc_motor.h)(0x6A65F696)
-I (./Code/foc/Core/foc_types.h)(0x6A65E0BF)
+I (./Code/foc/Core/foc_motor.h)(0x6A660991)
+I (./Code/foc/Core/foc_types.h)(0x6A660966)
 I (./Code/foc/Core/foc_pid.h)(0x6A65D401)
 I (./Code/foc/Core/foc_svm.h)(0x6A65D4A7)
 I (./Code/foc/Core/foc_traj.h)(0x6A65E09D)
-I (./Code/foc/HAL/foc_config.h)(0x6A660159)
+I (./Code/foc/HAL/foc_config.h)(0x6A660AEA)
 I (Code\foc\App\foc_calib.h)(0x6A65D67E)
 I (../Core/Inc/main.h)(0x6A656D33)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h)(0x698C95F8)
@@ -1275,13 +1278,13 @@ I (Code\foc\App\../Driver/current/current_shunt.h)(0x6A651A4D)
 F (.\Code\foc\App\foc_ident.c)(0x6A660659)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_ident.o --omf_browse foc_g431\foc_ident.crf --depend foc_g431\foc_ident.d)
 I (Code\foc\App\foc_ident.h)(0x6A65E111)
 I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
-I (./Code/foc/Core/foc_motor.h)(0x6A65F696)
-I (./Code/foc/Core/foc_types.h)(0x6A65E0BF)
+I (./Code/foc/Core/foc_motor.h)(0x6A660991)
+I (./Code/foc/Core/foc_types.h)(0x6A660966)
 I (./Code/foc/Core/foc_pid.h)(0x6A65D401)
 I (./Code/foc/Core/foc_svm.h)(0x6A65D4A7)
 I (./Code/foc/Core/foc_traj.h)(0x6A65E09D)
 I (Code\foc\App\foc_cmd.h)(0x6A65E150)
-I (./Code/foc/HAL/foc_config.h)(0x6A660159)
+I (./Code/foc/HAL/foc_config.h)(0x6A660AEA)
 I (./Code/foc/Core/foc_utils.h)(0x6A65D3BC)
 I (E:\Keil_v5\ARM\ARMCC\include\math.h)(0x569DEA3A)
 I (../Core/Inc/main.h)(0x6A656D33)
@@ -1323,7 +1326,7 @@ I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h)(0x698C95F8)
 F (.\Code\foc\Driver\encoder\abz_encoder.c)(0x6A65D5D7)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\abz_encoder.o --omf_browse foc_g431\abz_encoder.crf --depend foc_g431\abz_encoder.d)
 I (Code\foc\Driver\encoder\abz_encoder.h)(0x6A65D5B5)
 I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
-I (./Code/foc/HAL/foc_config.h)(0x6A660159)
+I (./Code/foc/HAL/foc_config.h)(0x6A660AEA)
 I (./Code/foc/Core/foc_utils.h)(0x6A65D3BC)
 I (E:\Keil_v5\ARM\ARMCC\include\math.h)(0x569DEA3A)
 I (../Core/Inc/main.h)(0x6A656D33)
@@ -1401,7 +1404,7 @@ I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim.h)(0x698C95F8)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h)(0x698C95F8)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h)(0x698C95F8)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h)(0x698C95F8)
-I (./Code/foc/HAL/foc_config.h)(0x6A660159)
+I (./Code/foc/HAL/foc_config.h)(0x6A660AEA)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_ll_opamp.h)(0x698C95F8)
 I (E:\Keil_v5\ARM\ARMCC\include\string.h)(0x569DEA3A)
 F (.\Code\foc\Driver\hall\hall_sensor.c)(0x6A65FF90)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\hall_sensor.o --omf_browse foc_g431\hall_sensor.crf --depend foc_g431\hall_sensor.d)
@@ -1409,11 +1412,11 @@ I (Code\foc\Driver\hall\hall_sensor.h)(0x6A65FF3B)
 I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
 I (./Code/foc/Core/foc_utils.h)(0x6A65D3BC)
 I (E:\Keil_v5\ARM\ARMCC\include\math.h)(0x569DEA3A)
-F (.\Code\foc\HAL\foc_board_g431.c)(0x6A65D668)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_board_g431.o --omf_browse foc_g431\foc_board_g431.crf --depend foc_g431\foc_board_g431.d)
-I (Code\foc\HAL\foc_board_g431.h)(0x6A65D63D)
-I (./Code/foc/Core/foc_types.h)(0x6A65E0BF)
+F (.\Code\foc\HAL\foc_board_g431.c)(0x6A6609E2)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_board_g431.o --omf_browse foc_g431\foc_board_g431.crf --depend foc_g431\foc_board_g431.d)
+I (Code\foc\HAL\foc_board_g431.h)(0x6A6609BB)
+I (./Code/foc/Core/foc_types.h)(0x6A660966)
 I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
-I (Code\foc\HAL\foc_config.h)(0x6A660159)
+I (Code\foc\HAL\foc_config.h)(0x6A660AEA)
 I (../Core/Inc/main.h)(0x6A656D33)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h)(0x698C95F8)
 I (../Core/Inc/stm32g4xx_hal_conf.h)(0x6A599246)
@@ -1451,7 +1454,7 @@ I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h)(0x698C95F8)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h)(0x698C95F8)
 I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h)(0x698C95F8)
 I (Code\foc\HAL\../App/foc_app.h)(0x6A65D6B9)
-I (./Code/foc/Core/foc_motor.h)(0x6A65F696)
+I (./Code/foc/Core/foc_motor.h)(0x6A660991)
 I (./Code/foc/Core/foc_pid.h)(0x6A65D401)
 I (./Code/foc/Core/foc_svm.h)(0x6A65D4A7)
 I (./Code/foc/Core/foc_traj.h)(0x6A65E09D)
@@ -1460,6 +1463,52 @@ I (Code\foc\HAL\../Driver/current/current_shunt.h)(0x6A651A4D)
 I (Code\foc\HAL\../Driver/encoder/abz_encoder.h)(0x6A65D5B5)
 I (./Code/foc/Core/foc_utils.h)(0x6A65D3BC)
 I (E:\Keil_v5\ARM\ARMCC\include\math.h)(0x569DEA3A)
+F (.\Code\foc\HAL\foc_store.c)(0x6A660A31)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\foc_store.o --omf_browse foc_g431\foc_store.crf --depend foc_g431\foc_store.d)
+I (Code\foc\HAL\foc_store.h)(0x6A6609F9)
+I (Code\foc\HAL\../Core/foc_motor.h)(0x6A660991)
+I (Code\foc\HAL\../Core/foc_types.h)(0x6A660966)
+I (E:\Keil_v5\ARM\ARMCC\include\stdint.h)(0x66583D2E)
+I (Code\foc\HAL\../Core/foc_pid.h)(0x6A65D401)
+I (Code\foc\HAL\../Core/foc_svm.h)(0x6A65D4A7)
+I (Code\foc\HAL\../Core/foc_traj.h)(0x6A65E09D)
+I (Code\foc\HAL\foc_config.h)(0x6A660AEA)
+I (../Core/Inc/main.h)(0x6A656D33)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h)(0x698C95F8)
+I (../Core/Inc/stm32g4xx_hal_conf.h)(0x6A599246)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_rcc.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_def.h)(0x698C95F8)
+I (../Drivers/CMSIS/Device/ST/STM32G4xx/Include/stm32g4xx.h)(0x698C95F8)
+I (../Drivers/CMSIS/Device/ST/STM32G4xx/Include/stm32g431xx.h)(0x698C95F8)
+I (../Drivers/CMSIS/Include/core_cm4.h)(0x698C95E0)
+I (../Drivers/CMSIS/Include/cmsis_version.h)(0x698C95E0)
+I (../Drivers/CMSIS/Include/cmsis_compiler.h)(0x698C95E0)
+I (../Drivers/CMSIS/Include/cmsis_armcc.h)(0x698C95E0)
+I (../Drivers/CMSIS/Include/mpu_armv7.h)(0x698C95E0)
+I (../Drivers/CMSIS/Device/ST/STM32G4xx/Include/system_stm32g4xx.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy/stm32_hal_legacy.h)(0x698C95F8)
+I (E:\Keil_v5\ARM\ARMCC\include\stddef.h)(0x569DEA3A)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_rcc_ex.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_gpio.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_gpio_ex.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_dma.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_dma_ex.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_cortex.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_adc.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_ll_adc.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_adc_ex.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_exti.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_flash.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_flash_ex.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_flash_ramfunc.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_opamp.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_opamp_ex.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_pwr.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_pwr_ex.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h)(0x698C95F8)
+I (../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h)(0x698C95F8)
+I (E:\Keil_v5\ARM\ARMCC\include\string.h)(0x569DEA3A)
 F (E:/Keil_v5/ARM/CMSIS-DSP/1.17.0/Source/BasicMathFunctions/BasicMathFunctions.c)(0x698F33E1)(--c99 -c --cpu Cortex-M4.fp.sp -D__MICROLIB -g -O3 --apcs=interwork --split_sections -I ../Core/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc -I ../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy -I ../Drivers/CMSIS/Device/ST/STM32G4xx/Include -I ../Drivers/CMSIS/Include -I ./Code/foc/App -I ./Code/foc/Core -I ./Code/foc/HAL -I ./Code/foc/Driver -I ./Code/foc/Driver/encoder -I ./Code/foc/Driver/current -I ./Code/foc/Driver/hall --diag_suppress=1,111-I.\RTE\_FOC_G431-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\Include-IE:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude-IE:\Keil_v5\ARM\CMSIS\6.1.0\CMSIS\Core\Include-IE:\Keil_v5\Keil\STM32G4xx_DFP\1.5.0\Drivers\CMSIS\Device\ST\STM32G4xx\Include-D__UVISION_VERSION="540" -DSTM32G431xx -D_RTE_ -DUSE_HAL_DRIVER -DSTM32G431xx -DARM_MATH_CM4-o foc_g431\basicmathfunctions.o --omf_browse foc_g431\basicmathfunctions.crf --depend foc_g431\basicmathfunctions.d)
 I (E:/Keil_v5/ARM/CMSIS-DSP/1.17.0/Source/BasicMathFunctions/arm_abs_f32.c)(0x698F33E1)
 I (E:\Keil_v5\ARM\CMSIS-DSP\1.17.0\PrivateInclude\arm_compiler_specific.h)(0x698F33E1)

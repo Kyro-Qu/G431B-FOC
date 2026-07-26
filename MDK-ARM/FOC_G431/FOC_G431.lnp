@@ -40,6 +40,7 @@
 "foc_g431\current_shunt.o"
 "foc_g431\hall_sensor.o"
 "foc_g431\foc_board_g431.o"
+"foc_g431\foc_store.o"
 "foc_g431\basicmathfunctions.o"
 "foc_g431\basicmathfunctionsf16.o"
 "foc_g431\bayesfunctions.o"

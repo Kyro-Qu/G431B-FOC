@@ -77,7 +77,10 @@ typedef enum {
     FOC_FAULT_RUN_OVERCURRENT,    /* 运行期间过流 */
     FOC_FAULT_CALIB_TIMEOUT,      /* 校准超时（等不到 Z 脉冲） */
     FOC_FAULT_CALIB_STATE,        /* 校准状态机异常 */
-    FOC_FAULT_NOT_CALIBRATED      /* 闭环模式要求校准但尚未完成 */
+    FOC_FAULT_NOT_CALIBRATED,     /* 闭环模式要求校准但尚未完成 */
+    FOC_FAULT_CONTROL_NAN,        /* 控制环输出出现 NaN（参数/数值异常） */
+    FOC_FAULT_STALL,              /* 堵转：电流饱和且转速≈0 持续超时 */
+    FOC_FAULT_BAD_CONFIG          /* 上电参数自检失败（参数非法） */
 } foc_fault_t;
 
 /* ========== 硬件抽象接口表 ========== */
@@ -151,6 +154,10 @@ typedef struct {
     float traj_accel_rpm_s;   /* 轨迹加/减速度 RPM/s */
     /* dq 轴解耦前馈开关：vd -= ω·Lq·iq, vq += ω·Ld·id */
     uint8_t decouple_enable;
+    /* 堵转保护（仅速度/位置模式；力矩模式堵转是正常工况） */
+    uint8_t stall_enable;     /* 1 = 使能堵转检测 */
+    float stall_rpm;          /* 转速低于此值视为"不转" */
+    uint16_t stall_timeout_ms;/* 电流饱和且不转持续超时 → FOC_FAULT_STALL */
 } foc_ctrl_cfg_t;
 
 /* ========== 安全诊断（一轴一份，Keil Watch 友好） ========== */

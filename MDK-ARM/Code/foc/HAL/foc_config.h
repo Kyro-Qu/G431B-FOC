@@ -87,6 +87,25 @@
 /** dq 解耦前馈（ω·L·i 交叉项补偿），低感电机低速时影响小，默认开 */
 #define FOC_M0_DECOUPLE         1
 
+/** 堵转保护（仅速度/位置模式生效；力矩模式堵转是正常工况）：
+ *  |Iq给定| ≥ 95% 限流 且 |转速| < 阈值 持续超时 → FOC_FAULT_STALL */
+#define FOC_M0_STALL_ENABLE     1
+#define FOC_M0_STALL_RPM        30.0f      /* 低于此转速视为"没在转" */
+#define FOC_M0_STALL_TIMEOUT_MS 1000U
+
+/* ======================== 3.5 系统级稳定性 ======================== */
+
+/** 独立看门狗 IWDG（LSI 32kHz 时钟，与主时钟无关）：
+ *  主循环挂死超过超时时间即硬件复位，TAMP 黑匣子会留下现场。
+ *  调试器断点不会误触发（已配置 DBGMCU 冻结）。上限 4095ms */
+#define FOC_WATCHDOG_ENABLE     1
+#define FOC_WATCHDOG_TIMEOUT_MS 400U
+
+/** Flash 参数存储（ODrive save_configuration 思路）：
+ *  串口 `save` 把电机参数/控制环参数/校准偏移写入最后一页 Flash，
+ *  上电自动加载；有存储偏移时校准走"快速索引搜索"（免对齐吸附）。 */
+#define FOC_STORE_ENABLE        1
+
 /* ---- 编码器（轴 0，TIM4 ABZ） ---- */
 
 /** 4 倍频后的每转计数（512 线 × 4） */

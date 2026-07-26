@@ -45,6 +45,9 @@ extern "C" {
 /** 上电校准结果（由校准状态机写入） */
 typedef struct {
     uint8_t valid;                 /* 1 = 本次上电已校准成功 */
+    uint8_t from_store;            /* 1 = direction/offset 来自 Flash 存储，
+                                    * 校准可走快速索引搜索（免对齐吸附）。
+                                    * 注意 valid 仍需等 Z 脉冲重建零点后才置 1 */
     int8_t direction;              /* 编码器正方向 vs 电角度正方向：+1/-1 */
     float electrical_offset_rad;   /* 电角度偏移：θe = dir·pp·θm + offset */
 } foc_calib_result_t;
@@ -106,6 +109,8 @@ typedef struct foc_motor {
     /* ---- 内部 ---- */
     float ol_angle_step;           /* 开环每拍电角度增量 */
     uint16_t slow_cnt;             /* 慢环分频计数 */
+    uint16_t stall_cnt;            /* 堵转连续计数（慢环拍） */
+    uint16_t stall_trip_ticks;     /* 堵转跳闸阈值（由超时 ms 换算） */
 
     /* 测试信号注入钩子：CALIB 状态且 pwm_hold==0 时快环每拍调用，
      * 供参数辨识（Rs/Ls 方波注入）等测试例程改写 v_openloop。

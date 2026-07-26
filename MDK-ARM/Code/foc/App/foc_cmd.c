@@ -13,6 +13,8 @@
 #include "foc_ident.h"
 #include "foc_telemetry.h"
 #include "../Core/foc_port.h"
+#include "../HAL/foc_board_g431.h"
+#include "../HAL/foc_store.h"
 #include "main.h"
 
 #include <stdio.h>
@@ -93,18 +95,23 @@ static void cmd_print_status(void)
     for (i = 0U; i < (uint8_t)FOC_NUM_AXES; i++) {
         foc_motor_t *m = foc_app_motor(i);
 
+        /* calib 后缀 *：偏移来自 Flash 存储（快速索引搜索可用） */
         foc_cmd_print("M%u %s mode=%s tgt=%.3f vel=%.1frpm pos=%.2frad "
-                  "iq=%.3fA calib=%u fault=%u%s\r\n",
+                  "iq=%.3fA calib=%u%s fault=%u%s\r\n",
                   (unsigned)i, state_name(m->state), mode_name(m->mode),
                   (double)m->target, (double)m->velocity_rpm,
                   (double)m->position_rad, (double)m->i_dq_filt.q,
                   (unsigned)m->calib.valid,
+                  (m->calib.from_store != 0U) ? "*" : "",
                   (unsigned)m->safety.fault_code,
                   (i == cur_axis) ? "  <-" : "");
     }
-    foc_cmd_print("calib_state=%u telem=%u\r\n",
+    foc_cmd_print("calib_state=%u telem=%u cpu=%.1f%% (max %.1f%%)\r\n",
               (unsigned)foc_calib_get_state(),
-              (unsigned)foc_telemetry_get_enable());
+              (unsigned)foc_telemetry_get_enable(),
+              (double)g_foc_cpu_diag.load_pct,
+              (double)(100.0f * (float)g_foc_cpu_diag.max_cycles /
+                       (170000000.0f / FOC_PWM_FREQ_HZ)));
 }
 
 static void cmd_print_help(void)
@@ -124,6 +131,8 @@ static void cmd_print_help(void)
         " pp <v>         position P gain\r\n"
         " lim <A>        soft current limit\r\n"
         " id / id a      measure Rs+Ls / apply result\r\n"
+        " save / save e  save params+calib to flash / erase store\r\n"
+        " c full         force full calibration (ignore stored offset)\r\n"
         " log <0|1>      telemetry stream\r\n",
         (unsigned)cur_axis);
 }
@@ -197,6 +206,10 @@ static void cmd_execute(char *line)
         } else if (foc_calib_is_active() != 0U) {
             foc_cmd_print("err: calib busy on another axis\r\n");
         } else {
+            /* `c full`：忽略存储偏移，强制完整校准（对齐+找Z 重新测） */
+            if ((arg != 0) && (strcmp(arg, "full") == 0)) {
+                m->calib.from_store = 0U;
+            }
             foc_calib_start(m);
             if (m->state == FOC_STATE_CALIB) {
                 foc_cmd_print("M%u calib start\r\n", (unsigned)cur_axis);
@@ -331,6 +344,20 @@ static void cmd_execute(char *line)
             }
         } else {
             foc_ident_start(m);
+        }
+
+    } else if (strcmp(cmd, "save") == 0) {
+        if ((arg != 0) && (strcmp(arg, "e") == 0)) {
+            foc_cmd_print(foc_store_erase() != 0U
+                              ? "store erased (defaults on next boot)\r\n"
+                              : "err: erase failed\r\n");
+        } else if ((m->state == FOC_STATE_RUN) ||
+                   (m->state == FOC_STATE_CALIB)) {
+            foc_cmd_print("err: save needs IDLE (flash erase blocks 22ms)\r\n");
+        } else {
+            foc_cmd_print(foc_store_save(m) != 0U
+                              ? "saved to flash (auto-load on boot)\r\n"
+                              : "err: flash save failed\r\n");
         }
 
     } else if (strcmp(cmd, "log") == 0) {
