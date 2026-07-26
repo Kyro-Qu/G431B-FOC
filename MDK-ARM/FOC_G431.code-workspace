@@ -1,0 +1,19 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "KeilAssistant.Project.ExcludeList": [
+            "template.uvproj",
+            "template.uvprojx"
+        ]
+    },
+    "extensions": {
+        "recommendations": [
+            "cl.keil-assistant",
+            "ms-vscode.cpptools"
+        ]
+    }
+}
