@@ -146,6 +146,9 @@ typedef struct {
     /* 位置环 P（输入 rad 误差，输出速度给定 RPM） */
     float pos_kp;             /* RPM / rad */
     float pos_vel_limit_rpm;  /* 位置模式允许的最大速度给定 */
+    /* 位置模式梯形轨迹规划（ODrive trap_traj 方案） */
+    uint8_t traj_enable;      /* 1 = 目标位置经轨迹规划器平滑 */
+    float traj_accel_rpm_s;   /* 轨迹加/减速度 RPM/s */
     /* dq 轴解耦前馈开关：vd -= ω·Lq·iq, vq += ω·Ld·id */
     uint8_t decouple_enable;
 } foc_ctrl_cfg_t;

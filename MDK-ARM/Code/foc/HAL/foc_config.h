@@ -17,14 +17,14 @@
 /* ======================== 1. 轴与调度 ======================== */
 
 /**
- * 电机轴数量：1 或 2。
- * 轴 0 绑定本板硬件（TIM1 + ADC1/2 + TIM4 ABZ）。
- * 轴 1 默认是"虚拟轴"：无功率级/传感器，仅开环数学运行，
- * 用于演示与验证双轴调度框架；接入第二套功率板时按
- * 《Docs/05_双电机扩展.md》替换 foc_board_g431.c 中的 M1 绑定。
+ * 电机轴数量：1 或 2。本板只有一套功率级，默认 1（单电机）。
+ * 双轴框架已完整预留：改成 2 即启用轴 1 ——
+ *   默认的轴 1 是"虚拟轴"（无功率级/传感器，仅开环数学运行），
+ *   用于演示与验证双轴调度框架；接入真实第二套功率板时按
+ *   《Docs/05_双电机扩展.md》替换 foc_board_g431.c 中的 M1 绑定。
  */
 #ifndef FOC_NUM_AXES
-#define FOC_NUM_AXES            2
+#define FOC_NUM_AXES            1
 #endif
 
 /** PWM / 快环频率 Hz（TIM1 中心对齐，ARR 与之对应） */
@@ -75,6 +75,10 @@
 /** 位置环 P（输入 rad 误差 → 输出速度给定 RPM） */
 #define FOC_M0_POS_KP           60.0f      /* RPM/rad */
 #define FOC_M0_POS_VEL_LIMIT    1000.0f    /* 位置模式速度上限 RPM */
+
+/** 位置模式梯形轨迹（限速限加速度的平滑运动，ODrive trap_traj） */
+#define FOC_M0_TRAJ_ENABLE      1
+#define FOC_M0_TRAJ_ACC_RPM_S   4000.0f    /* 轨迹加/减速度 */
 
 /** dq 解耦前馈（ω·L·i 交叉项补偿），低感电机低速时影响小，默认开 */
 #define FOC_M0_DECOUPLE         1

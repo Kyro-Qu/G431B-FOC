@@ -4,6 +4,7 @@ foc_g431\foc_motor.o: Code\foc\Core\foc_types.h
 foc_g431\foc_motor.o: E:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 foc_g431\foc_motor.o: Code\foc\Core\foc_pid.h
 foc_g431\foc_motor.o: Code\foc\Core\foc_svm.h
+foc_g431\foc_motor.o: Code\foc\Core\foc_traj.h
 foc_g431\foc_motor.o: Code\foc\Core\foc_transform.h
 foc_g431\foc_motor.o: Code\foc\Core\foc_utils.h
 foc_g431\foc_motor.o: E:\Keil_v5\ARM\ARMCC\Bin\..\include\math.h

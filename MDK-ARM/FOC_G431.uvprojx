@@ -763,6 +763,11 @@
               <FileType>1</FileType>
               <FilePath>.\Code\foc\Core\foc_observer.c</FilePath>
             </File>
+            <File>
+              <FileName>foc_traj.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Code\foc\Core\foc_traj.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -787,6 +792,11 @@
               <FileName>foc_telemetry.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Code\foc\App\foc_telemetry.c</FilePath>
+            </File>
+            <File>
+              <FileName>foc_ident.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Code\foc\App\foc_ident.c</FilePath>
             </File>
           </Files>
         </Group>

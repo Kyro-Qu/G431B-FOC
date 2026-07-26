@@ -147,6 +147,15 @@ void foc_calib_task(void)
         return;
     }
 
+    /* 用户在校准中途 disarm（串口 e 0）：安静收尾，不锁存故障 */
+    if (m->state != FOC_STATE_CALIB) {
+        foc_motor_restore_current_limits(m);
+        m->pwm_hold = 0U;
+        foc_motor_openloop_hold(m, FOC_CALIB_ALIGN_THETA_E, 0.0f, 0.0f);
+        calib_set_state(FOC_CALIB_FAIL);
+        return;
+    }
+
     switch (calib_state) {
     case FOC_CALIB_BOOTSTRAP:
         if (calib_elapsed(now, calib_tick, FOC_CALIB_BOOTSTRAP_MS)) {

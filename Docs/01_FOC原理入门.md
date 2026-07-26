@@ -184,9 +184,10 @@ FOC 需要**电角度**（θe = 机械角 × 极对数 + 偏移）。本工程�
 | 项目 | 借鉴的精华 | 落在哪 |
 | ---- | ---- | ---- |
 | **SimpleFOC** | PID/LPF 的简洁实现（Tustin 积分+抗饱和+输出斜坡）；传感器/驱动/电流采样三大抽象接口；级联控制模式切换 | `foc_pid.c`、`foc_types.h` 接口表、`foc_motor.c` |
-| **ODrive** | 轴对象化（一轴一对象，天然多电机）；电流环带宽自动整定 Kp=Lω Ki=Rω；状态机化的上电校准流程 | `foc_motor_t`、`foc_motor_init()`、`foc_calib.c` |
-| **VESC** | 中点注入 SVPWM 写法；全部控制放中断里的确定性调度；故障码集中管理 + 终端命令行调试 | `foc_svm.c`、`foc_motor_fast_loop()`、`foc_cmd.c` |
+| **ODrive** | 轴对象化（一轴一对象，天然多电机）；电流环带宽自动整定 Kp=Lω Ki=Rω；状态机化的上电校准流程；Rs/Ls 参数自动测量；梯形轨迹规划 | `foc_motor_t`、`foc_motor_init()`、`foc_calib.c`、`foc_ident.c`、`foc_traj.c` |
+| **VESC** | 中点注入 SVPWM 写法；全部控制放中断里的确定性调度；故障码集中管理 + 终端命令行调试；磁链观测器（预留） | `foc_svm.c`、`foc_motor_fast_loop()`、`foc_cmd.c`、`foc_observer.c` |
 | **ST MCSDK** | 三电阻低边采样的窗口规划、自举电容预充电、ADC 注入队列时序（这部分在本板硬件上验证过） | `current_shunt.c`、`foc_board_g431.c` |
+| **MESC / moteus** | 调研对象：MESC 的 HFI 低速无感、moteus 的高级位置控制与热模型是后续路线图（见 05 篇） | 暂未落地，思路记录在文档 |
 
 ---
 

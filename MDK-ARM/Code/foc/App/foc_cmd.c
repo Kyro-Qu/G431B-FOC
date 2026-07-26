@@ -10,6 +10,7 @@
 #include "foc_cmd.h"
 #include "foc_app.h"
 #include "foc_calib.h"
+#include "foc_ident.h"
 #include "foc_telemetry.h"
 #include "main.h"
 
@@ -35,8 +36,9 @@ static uint8_t cur_axis = 0U;
 /*
  * 阻塞发送一段响应。遥测帧只有 ~70 字节（6.5M 波特率下约 0.1 ms），
  * 简单等待 UART 空闲即可，不会与遥测 DMA 冲突。
+ * 公开给其它 App 模块（如 foc_ident）使用，仅限主循环上下文。
  */
-static void cmd_print(const char *fmt, ...)
+void foc_cmd_print(const char *fmt, ...)
 {
     static char out[192];
     va_list ap;
@@ -86,7 +88,7 @@ static void cmd_print_status(void)
     for (i = 0U; i < (uint8_t)FOC_NUM_AXES; i++) {
         foc_motor_t *m = foc_app_motor(i);
 
-        cmd_print("M%u %s mode=%s tgt=%.3f vel=%.1frpm pos=%.2frad "
+        foc_cmd_print("M%u %s mode=%s tgt=%.3f vel=%.1frpm pos=%.2frad "
                   "iq=%.3fA calib=%u fault=%u%s\r\n",
                   (unsigned)i, state_name(m->state), mode_name(m->mode),
                   (double)m->target, (double)m->velocity_rpm,
@@ -95,14 +97,14 @@ static void cmd_print_status(void)
                   (unsigned)m->safety.fault_code,
                   (i == cur_axis) ? "  <-" : "");
     }
-    cmd_print("calib_state=%u telem=%u\r\n",
+    foc_cmd_print("calib_state=%u telem=%u\r\n",
               (unsigned)foc_calib_get_state(),
               (unsigned)foc_telemetry_get_enable());
 }
 
 static void cmd_print_help(void)
 {
-    cmd_print(
+    foc_cmd_print(
         "FOC cmd:\r\n"
         " s              status\r\n"
         " a <n>          select axis (now M%u)\r\n"
@@ -116,6 +118,7 @@ static void cmd_print_help(void)
         " vp/vi <v>      velocity PI gains\r\n"
         " pp <v>         position P gain\r\n"
         " lim <A>        soft current limit\r\n"
+        " id / id a      measure Rs+Ls / apply result\r\n"
         " log <0|1>      telemetry stream\r\n",
         (unsigned)cur_axis);
 }
@@ -162,58 +165,75 @@ static void cmd_execute(char *line)
     } else if (strcmp(cmd, "a") == 0) {
         if (has_val && ((uint8_t)val < (uint8_t)FOC_NUM_AXES)) {
             cur_axis = (uint8_t)val;
-            cmd_print("axis M%u\r\n", (unsigned)cur_axis);
+            foc_cmd_print("axis M%u\r\n", (unsigned)cur_axis);
         } else {
-            cmd_print("err: a 0..%u\r\n", (unsigned)(FOC_NUM_AXES - 1U));
+            foc_cmd_print("err: a 0..%u\r\n", (unsigned)(FOC_NUM_AXES - 1U));
         }
 
     } else if (strcmp(cmd, "e") == 0) {
         if (has_val && (val != 0.0f)) {
             if (foc_motor_arm(m) != 0U) {
-                cmd_print("M%u armed (%s)\r\n",
+                foc_cmd_print("M%u armed (%s)\r\n",
                           (unsigned)cur_axis, mode_name(m->mode));
             } else {
-                cmd_print("err: arm rejected, state=%s fault=%u\r\n",
+                foc_cmd_print("err: arm rejected, state=%s fault=%u\r\n",
                           state_name(m->state),
                           (unsigned)m->safety.fault_code);
             }
         } else {
             foc_motor_disarm(m);
-            cmd_print("M%u idle\r\n", (unsigned)cur_axis);
+            foc_cmd_print("M%u idle\r\n", (unsigned)cur_axis);
         }
 
     } else if (strcmp(cmd, "c") == 0) {
-        foc_calib_start(m);
-        cmd_print("M%u calib start\r\n", (unsigned)cur_axis);
+        if (m->state != FOC_STATE_IDLE) {
+            foc_cmd_print("err: calib needs IDLE, state=%s\r\n",
+                      state_name(m->state));
+        } else {
+            foc_calib_start(m);
+            if (m->state == FOC_STATE_CALIB) {
+                foc_cmd_print("M%u calib start\r\n", (unsigned)cur_axis);
+            } else {
+                foc_cmd_print("err: calib rejected, fault=%u\r\n",
+                          (unsigned)m->safety.fault_code);
+            }
+        }
 
     } else if (strcmp(cmd, "f") == 0) {
         foc_motor_clear_fault(m);
-        cmd_print("M%u fault cleared, state=%s\r\n",
+        foc_cmd_print("M%u fault cleared, state=%s\r\n",
                   (unsigned)cur_axis, state_name(m->state));
 
     } else if (strcmp(cmd, "m") == 0) {
         if (arg == 0) {
-            cmd_print("mode=%s\r\n", mode_name(m->mode));
+            foc_cmd_print("mode=%s\r\n", mode_name(m->mode));
         } else if (strcmp(arg, "vf") == 0) {
             foc_motor_set_mode(m, FOC_MODE_OPENLOOP_VF);
-            cmd_print("M%u mode=vf\r\n", (unsigned)cur_axis);
+            foc_cmd_print("M%u mode=vf\r\n", (unsigned)cur_axis);
         } else if (strcmp(arg, "iq") == 0) {
             foc_motor_set_mode(m, FOC_MODE_TORQUE);
-            cmd_print("M%u mode=iq\r\n", (unsigned)cur_axis);
+            foc_cmd_print("M%u mode=iq\r\n", (unsigned)cur_axis);
         } else if (strcmp(arg, "vel") == 0) {
             foc_motor_set_mode(m, FOC_MODE_VELOCITY);
-            cmd_print("M%u mode=vel\r\n", (unsigned)cur_axis);
+            foc_cmd_print("M%u mode=vel\r\n", (unsigned)cur_axis);
         } else if (strcmp(arg, "pos") == 0) {
             foc_motor_set_mode(m, FOC_MODE_POSITION);
-            cmd_print("M%u mode=pos\r\n", (unsigned)cur_axis);
+            foc_cmd_print("M%u mode=pos\r\n", (unsigned)cur_axis);
         } else {
-            cmd_print("err: m vf|iq|vel|pos\r\n");
+            foc_cmd_print("err: m vf|iq|vel|pos\r\n");
         }
 
     } else if (strcmp(cmd, "t") == 0) {
         if (has_val) {
             foc_motor_set_target(m, val);
-            cmd_print("M%u t=%.3f\r\n", (unsigned)cur_axis, (double)val);
+            /* 开环 V/f 模式下 t 的语义是电压（V），直接落到 vq 命令 */
+            if (m->mode == FOC_MODE_OPENLOOP_VF) {
+                if (cur_axis == 0U) {
+                    g_m0_openloop_vq = val;
+                }
+                m->v_openloop.q = val;
+            }
+            foc_cmd_print("M%u t=%.3f\r\n", (unsigned)cur_axis, (double)val);
         }
 
     } else if (strcmp(cmd, "vq") == 0) {
@@ -222,7 +242,7 @@ static void cmd_execute(char *line)
                 g_m0_openloop_vq = val;
             }
             m->v_openloop.q = val;
-            cmd_print("M%u vq=%.3f\r\n", (unsigned)cur_axis, (double)val);
+            foc_cmd_print("M%u vq=%.3f\r\n", (unsigned)cur_axis, (double)val);
         }
 
     } else if (strcmp(cmd, "rpm") == 0) {
@@ -231,7 +251,7 @@ static void cmd_execute(char *line)
                 g_m0_openloop_rpm = val;
             }
             foc_motor_openloop_spin(m, val, m->v_openloop.d, m->v_openloop.q);
-            cmd_print("M%u rpm=%.1f\r\n", (unsigned)cur_axis, (double)val);
+            foc_cmd_print("M%u rpm=%.1f\r\n", (unsigned)cur_axis, (double)val);
         }
 
     } else if (strcmp(cmd, "cb") == 0) {
@@ -243,7 +263,7 @@ static void cmd_execute(char *line)
                          m->params.rs_ohm * val, 0.0f, v_max, 0.0f);
             foc_pid_init(&m->pid_iq, m->params.ls_henry * val,
                          m->params.rs_ohm * val, 0.0f, v_max, 0.0f);
-            cmd_print("M%u cb=%.0f kp=%.4f ki=%.2f\r\n",
+            foc_cmd_print("M%u cb=%.0f kp=%.4f ki=%.2f\r\n",
                       (unsigned)cur_axis, (double)val,
                       (double)m->pid_id.kp, (double)m->pid_id.ki);
         }
@@ -251,19 +271,19 @@ static void cmd_execute(char *line)
     } else if (strcmp(cmd, "vp") == 0) {
         if (has_val) {
             m->pid_vel.kp = val;
-            cmd_print("M%u vp=%.4f\r\n", (unsigned)cur_axis, (double)val);
+            foc_cmd_print("M%u vp=%.4f\r\n", (unsigned)cur_axis, (double)val);
         }
 
     } else if (strcmp(cmd, "vi") == 0) {
         if (has_val) {
             m->pid_vel.ki = val;
-            cmd_print("M%u vi=%.4f\r\n", (unsigned)cur_axis, (double)val);
+            foc_cmd_print("M%u vi=%.4f\r\n", (unsigned)cur_axis, (double)val);
         }
 
     } else if (strcmp(cmd, "pp") == 0) {
         if (has_val) {
             m->pid_pos.kp = val;
-            cmd_print("M%u pp=%.2f\r\n", (unsigned)cur_axis, (double)val);
+            foc_cmd_print("M%u pp=%.2f\r\n", (unsigned)cur_axis, (double)val);
         }
 
     } else if (strcmp(cmd, "lim") == 0) {
@@ -271,18 +291,36 @@ static void cmd_execute(char *line)
             m->params.max_current_a = val;
             m->safety.current_limit_a = val;
             foc_pid_set_limit(&m->pid_vel, val);
-            cmd_print("M%u lim=%.2fA\r\n", (unsigned)cur_axis, (double)val);
+            foc_cmd_print("M%u lim=%.2fA\r\n", (unsigned)cur_axis, (double)val);
         } else {
-            cmd_print("err: 0 < lim <= %.1f\r\n",
+            foc_cmd_print("err: 0 < lim <= %.1f\r\n",
                       (double)m->params.hard_current_a);
         }
 
+    } else if (strcmp(cmd, "id") == 0) {
+        if ((arg != 0) && (strcmp(arg, "a") == 0)) {
+            if (foc_ident_apply(m) != 0U) {
+                foc_cmd_print("M%u applied: Rs=%.4f Ls=%.2fuH, "
+                              "current loop retuned\r\n",
+                              (unsigned)cur_axis,
+                              (double)m->params.rs_ohm,
+                              (double)(m->params.ls_henry * 1e6f));
+            } else {
+                foc_cmd_print("err: no valid ident result (run 'id' first, "
+                              "axis must not be running)\r\n");
+            }
+        } else {
+            foc_ident_start(m);
+        }
+
     } else if (strcmp(cmd, "log") == 0) {
-        foc_telemetry_set_enable((has_val && (val != 0.0f)) ? 1U : 0U);
-        cmd_print("telem=%u\r\n", (unsigned)foc_telemetry_get_enable());
+        if (has_val) {
+            foc_telemetry_set_enable((val != 0.0f) ? 1U : 0U);
+        }
+        foc_cmd_print("telem=%u\r\n", (unsigned)foc_telemetry_get_enable());
 
     } else {
-        cmd_print("err: unknown '%s', try help\r\n", cmd);
+        foc_cmd_print("err: unknown '%s', try help\r\n", cmd);
     }
 }
 

@@ -6,6 +6,7 @@
 #include "foc_app.h"
 #include "foc_calib.h"
 #include "foc_cmd.h"
+#include "foc_ident.h"
 #include "foc_telemetry.h"
 #include "main.h"
 #include "../HAL/foc_board_g431.h"
@@ -39,6 +40,8 @@ static const foc_ctrl_cfg_t m0_cfg = {
     .vel_lpf_tf        = FOC_M0_VEL_LPF_TF,
     .pos_kp            = FOC_M0_POS_KP,
     .pos_vel_limit_rpm = FOC_M0_POS_VEL_LIMIT,
+    .traj_enable       = FOC_M0_TRAJ_ENABLE,
+    .traj_accel_rpm_s  = FOC_M0_TRAJ_ACC_RPM_S,
     .decouple_enable   = FOC_M0_DECOUPLE,
 };
 
@@ -62,6 +65,8 @@ static const foc_ctrl_cfg_t m1_cfg = {
     .vel_lpf_tf        = 0.005f,
     .pos_kp            = 60.0f,
     .pos_vel_limit_rpm = 1000.0f,
+    .traj_enable       = 1U,
+    .traj_accel_rpm_s  = 4000.0f,
     .decouple_enable   = 0U,
 };
 #endif
@@ -129,8 +134,9 @@ void foc_app_task(void)
 {
     foc_motor_t *m0 = &g_foc_motors[0];
 
-    /* 校准状态机 */
+    /* 校准与参数辨识状态机 */
     foc_calib_task();
+    foc_ident_task();
 
     /* 串口命令 */
     foc_cmd_task();

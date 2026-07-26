@@ -44,6 +44,7 @@ foc_g431\foc_board_g431.o: Code\foc\HAL\../App/foc_app.h
 foc_g431\foc_board_g431.o: ./Code/foc/Core/foc_motor.h
 foc_g431\foc_board_g431.o: ./Code/foc/Core/foc_pid.h
 foc_g431\foc_board_g431.o: ./Code/foc/Core/foc_svm.h
+foc_g431\foc_board_g431.o: ./Code/foc/Core/foc_traj.h
 foc_g431\foc_board_g431.o: Code\foc\HAL\../App/foc_calib.h
 foc_g431\foc_board_g431.o: Code\foc\HAL\../Driver/current/current_shunt.h
 foc_g431\foc_board_g431.o: Code\foc\HAL\../Driver/encoder/abz_encoder.h

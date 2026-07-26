@@ -38,6 +38,9 @@ void foc_cmd_init(void);
 /** 主循环任务：解析并执行收到的整行命令 */
 void foc_cmd_task(void);
 
+/** 格式化打印到命令串口（阻塞，仅限主循环上下文调用） */
+void foc_cmd_print(const char *fmt, ...);
+
 #ifdef __cplusplus
 }
 #endif

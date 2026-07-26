@@ -36,6 +36,7 @@
 #include "foc_types.h"
 #include "foc_pid.h"
 #include "foc_svm.h"
+#include "foc_traj.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -98,9 +99,18 @@ typedef struct foc_motor {
     foc_lpf_t lpf_id;
     foc_lpf_t lpf_iq;
 
+    /* ---- 位置模式轨迹规划 ---- */
+    foc_traj_t traj;
+    float traj_target_latch;       /* 已规划的目标（变化即触发重规划） */
+
     /* ---- 内部 ---- */
     float ol_angle_step;           /* 开环每拍电角度增量 */
     uint16_t slow_cnt;             /* 慢环分频计数 */
+
+    /* 测试信号注入钩子：CALIB 状态且 pwm_hold==0 时快环每拍调用，
+     * 供参数辨识（Rs/Ls 方波注入）等测试例程改写 v_openloop。
+     * 平时必须为 NULL。 */
+    void (*test_hook)(struct foc_motor *m);
 } foc_motor_t;
 
 /* ======================== 生命周期 ======================== */

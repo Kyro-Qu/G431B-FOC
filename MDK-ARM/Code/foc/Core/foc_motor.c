@@ -119,9 +119,33 @@ static void foc_motor_slow_loop(foc_motor_t *m)
     }
 
     case FOC_MODE_POSITION: {
-        /* 位置环 P：输出速度给定，再进速度 PI（级联） */
-        float vel_cmd = foc_pid_update(&m->pid_pos,
-                                       m->target - m->position_rad, dt);
+        float pos_ref = m->target;
+        float vel_ff_rpm = 0.0f;
+        float vel_cmd;
+
+        /* 梯形轨迹：目标变化时从当前状态重规划，之后每拍输出
+         * 平滑的位置参考 + 速度前馈（ODrive trap_traj 方案） */
+        if (m->cfg.traj_enable != 0U) {
+            float pos_r;
+            float vel_ff_rads;
+
+            if (m->target != m->traj_target_latch) {
+                foc_traj_plan(&m->traj, m->target,
+                              m->position_rad,
+                              m->velocity_filt_rpm * FOC_RPM_TO_RADS,
+                              m->cfg.pos_vel_limit_rpm * FOC_RPM_TO_RADS,
+                              m->cfg.traj_accel_rpm_s * FOC_RPM_TO_RADS,
+                              m->cfg.traj_accel_rpm_s * FOC_RPM_TO_RADS);
+                m->traj_target_latch = m->target;
+            }
+            (void)foc_traj_eval(&m->traj, dt, &pos_r, &vel_ff_rads);
+            pos_ref = pos_r;
+            vel_ff_rpm = vel_ff_rads * FOC_RADS_TO_RPM;
+        }
+
+        /* 位置环 P + 速度前馈 → 速度给定，再进速度 PI（级联） */
+        vel_cmd = foc_pid_update(&m->pid_pos, pos_ref - m->position_rad, dt) +
+                  vel_ff_rpm;
         m->vel_ref_rpm = foc_clampf(vel_cmd,
                                     -m->cfg.pos_vel_limit_rpm,
                                     m->cfg.pos_vel_limit_rpm);
@@ -194,6 +218,10 @@ void foc_motor_init(foc_motor_t *m,
     m->svm.sector = 0U;
     m->ol_angle_step = 0.0f;
     m->slow_cnt = 0U;
+    m->traj.active = 0U;
+    m->traj.xf = 0.0f;
+    m->traj_target_latch = 0.0f;
+    m->test_hook = 0;
 
     /* 安全限制默认取电机参数 */
     m->safety.peak_current_a = 0.0f;
@@ -267,9 +295,10 @@ void foc_motor_fast_loop(foc_motor_t *m)
     }
 
     /* 3. 电角度选择
-     *    CALIB 状态一律用开环角度（校准状态机负责推进/保持）；
-     *    RUN 状态按 angle_source 选择开环或编码器角度。 */
+     *    CALIB 状态与开环 V/f 模式一律用开环角度（校准/开环的定义
+     *    就是不信任何反馈）；闭环模式按 angle_source 用编码器角度。 */
     if ((st == FOC_STATE_CALIB) ||
+        (m->mode == FOC_MODE_OPENLOOP_VF) ||
         (m->angle_source == FOC_ANGLE_OPEN_LOOP) ||
         (m->calib.valid == 0U)) {
         m->theta_e = foc_wrap_0_2pi(m->theta_e + m->ol_angle_step);
@@ -294,6 +323,10 @@ void foc_motor_fast_loop(foc_motor_t *m)
 
     /* 6. 电压命令 */
     if ((st == FOC_STATE_CALIB) || (m->mode == FOC_MODE_OPENLOOP_VF)) {
+        /* 测试信号注入（参数辨识等）：允许测试例程按拍改写 v_openloop */
+        if ((st == FOC_STATE_CALIB) && (m->test_hook != 0)) {
+            m->test_hook(m);
+        }
         /* 开环/校准：直接使用外部给的 vd/vq */
         m->v_dq = m->v_openloop;
     } else {
@@ -355,6 +388,9 @@ uint8_t foc_motor_arm(foc_motor_t *m)
     if (m->mode == FOC_MODE_POSITION) {
         m->target = m->position_rad;
     }
+    m->traj.active = 0U;
+    m->traj.xf = m->position_rad;
+    m->traj_target_latch = m->target;
 
     m->state = FOC_STATE_RUN;
     m->drv->enable();
@@ -388,6 +424,9 @@ void foc_motor_set_mode(foc_motor_t *m, foc_mode_t mode)
 
     if (mode == FOC_MODE_POSITION) {
         m->target = m->position_rad;
+        m->traj.active = 0U;
+        m->traj.xf = m->position_rad;
+        m->traj_target_latch = m->target;
     }
     if ((mode != FOC_MODE_OPENLOOP_VF) && (m->calib.valid != 0U)) {
         m->angle_source = FOC_ANGLE_ENCODER_CALIBRATED;

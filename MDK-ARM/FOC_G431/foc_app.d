@@ -5,9 +5,11 @@ foc_g431\foc_app.o: ./Code/foc/Core/foc_types.h
 foc_g431\foc_app.o: E:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 foc_g431\foc_app.o: ./Code/foc/Core/foc_pid.h
 foc_g431\foc_app.o: ./Code/foc/Core/foc_svm.h
+foc_g431\foc_app.o: ./Code/foc/Core/foc_traj.h
 foc_g431\foc_app.o: ./Code/foc/HAL/foc_config.h
 foc_g431\foc_app.o: Code\foc\App\foc_calib.h
 foc_g431\foc_app.o: Code\foc\App\foc_cmd.h
+foc_g431\foc_app.o: Code\foc\App\foc_ident.h
 foc_g431\foc_app.o: Code\foc\App\foc_telemetry.h
 foc_g431\foc_app.o: ../Core/Inc/main.h
 foc_g431\foc_app.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h

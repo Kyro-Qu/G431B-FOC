@@ -12,6 +12,7 @@ Core/    纯算法层：禁止出现任何 HAL/寄存器代码
   foc_transform.h  Clarke/Park（内联）
   foc_svm.c/.h     SVPWM：电压矢量 → 占空比（纯函数）
   foc_pid.c/.h     PID + 一阶低通
+  foc_traj.c/.h    梯形轨迹规划（位置模式，ODrive trap_traj）
   foc_motor.c/.h   电机轴对象 + 级联控制环（工程心脏）
   foc_observer.c/.h【预留】无感磁链观测器 + PLL（VESC 式）
 
@@ -27,6 +28,7 @@ HAL/     板级绑定层：换板子只改这里
 App/     应用层：业务逻辑，不写算法不碰寄存器
   foc_app        多轴对象、初始化时序、按键、任务调度
   foc_calib      上电校准状态机
+  foc_ident      Rs/Ls 自动测量（串口 id / id a）
   foc_cmd        串口命令行（help 查看命令表）
   foc_telemetry  VOFA+ JustFloat 遥测（16 通道，见头文件通道表）
 ```

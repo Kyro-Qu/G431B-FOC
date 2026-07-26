@@ -6,8 +6,10 @@ foc_g431\foc_cmd.o: ./Code/foc/Core/foc_motor.h
 foc_g431\foc_cmd.o: ./Code/foc/Core/foc_types.h
 foc_g431\foc_cmd.o: ./Code/foc/Core/foc_pid.h
 foc_g431\foc_cmd.o: ./Code/foc/Core/foc_svm.h
+foc_g431\foc_cmd.o: ./Code/foc/Core/foc_traj.h
 foc_g431\foc_cmd.o: ./Code/foc/HAL/foc_config.h
 foc_g431\foc_cmd.o: Code\foc\App\foc_calib.h
+foc_g431\foc_cmd.o: Code\foc\App\foc_ident.h
 foc_g431\foc_cmd.o: Code\foc\App\foc_telemetry.h
 foc_g431\foc_cmd.o: ../Core/Inc/main.h
 foc_g431\foc_cmd.o: ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h
