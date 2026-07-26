@@ -279,7 +279,14 @@ void foc_board_watchdog_init(uint32_t timeout_ms)
     IWDG->KR = 0x00005555U;   /* 解锁 PR/RLR */
     IWDG->PR = 3U;            /* LSI/32 → 1 kHz */
     IWDG->RLR = reload;
-    while (IWDG->SR != 0U) {  /* 等待寄存器更新完成（几个 LSI 周期） */
+    /* 等待寄存器更新完成：正常 <0.3ms（LSI 起振 + 5 个 LSI 周期）。
+     * 加 10ms 上限，LSI 硅片级失效时放弃等待而不是卡死上电 */
+    {
+        uint32_t t0 = HAL_GetTick();
+
+        while ((IWDG->SR != 0U) &&
+               ((uint32_t)(HAL_GetTick() - t0) < 10U)) {
+        }
     }
     IWDG->KR = 0x0000AAAAU;   /* 首次喂狗，装载 RLR */
 }

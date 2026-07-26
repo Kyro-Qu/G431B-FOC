@@ -3,7 +3,7 @@
 <title>Static Call Graph - [FOC_G431\FOC_G431.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image FOC_G431\FOC_G431.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060061: Last Updated: Sun Jul 26 21:48:30 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060061: Last Updated: Sun Jul 26 21:54:24 2026
 <BR><P>
 <H3>Maximum Stack Usage =        384 bytes + Unknown(Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
@@ -911,6 +911,7 @@ Global Symbols
 <LI><a href="#[13f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_cmd_print
 <LI><a href="#[164]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_calib_task
 <LI><a href="#[13c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_calib_start
+<LI><a href="#[15d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_board_watchdog_init
 <LI><a href="#[14f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;current_shunt_calibrate
 <LI><a href="#[104]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;UART_WaitOnFlagUntilTimeout
 <LI><a href="#[102]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;UART_CheckIdleState
@@ -1702,8 +1703,8 @@ Global Symbols
 <LI><a href="#[62]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;m0_pwm_bootstrap
 </UL>
 
-<P><STRONG><a name="[155]"></a>foc_app_init</STRONG> (Thumb, 408 bytes, Stack size 112 bytes, foc_app.o(i.foc_app_init))
-<BR><BR>[Stack]<UL><LI>Max Depth = 216<LI>Call Chain = foc_app_init &rArr; foc_cmd_print &rArr; HAL_UART_Transmit &rArr; UART_WaitOnFlagUntilTimeout &rArr; UART_EndRxTransfer
+<P><STRONG><a name="[155]"></a>foc_app_init</STRONG> (Thumb, 408 bytes, Stack size 128 bytes, foc_app.o(i.foc_app_init))
+<BR><BR>[Stack]<UL><LI>Max Depth = 232<LI>Call Chain = foc_app_init &rArr; foc_cmd_print &rArr; HAL_UART_Transmit &rArr; UART_WaitOnFlagUntilTimeout &rArr; UART_EndRxTransfer
 </UL>
 <BR>[Calls]<UL><LI><a href="#[15b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_telemetry_init
 <LI><a href="#[157]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_store_load
@@ -1790,8 +1791,12 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[155]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_app_init
 </UL>
 
-<P><STRONG><a name="[15d]"></a>foc_board_watchdog_init</STRONG> (Thumb, 60 bytes, Stack size 0 bytes, foc_board_g431.o(i.foc_board_watchdog_init))
-<BR><BR>[Called By]<UL><LI><a href="#[155]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_app_init
+<P><STRONG><a name="[15d]"></a>foc_board_watchdog_init</STRONG> (Thumb, 76 bytes, Stack size 16 bytes, foc_board_g431.o(i.foc_board_watchdog_init))
+<BR><BR>[Stack]<UL><LI>Max Depth = 16<LI>Call Chain = foc_board_watchdog_init
+</UL>
+<BR>[Calls]<UL><LI><a href="#[8e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
+</UL>
+<BR>[Called By]<UL><LI><a href="#[155]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_app_init
 </UL>
 
 <P><STRONG><a name="[163]"></a>foc_board_watchdog_kick</STRONG> (Thumb, 10 bytes, Stack size 0 bytes, foc_board_g431.o(i.foc_board_watchdog_kick))

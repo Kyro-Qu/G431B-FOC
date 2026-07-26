@@ -139,19 +139,19 @@ void foc_app_init(void)
     /* 2. 编码器启动 */
     abz_encoder_init();
 
-    /* 3. 电流采样链路：OPAMP → ADC 校准/使能 → 注入触发路径 */
+    /* 3. 电流采样链路：OPAMP → ADC 校准/使能 → 注入触发路径。
+     *    失败也不能提前返回——串口/看门狗必须照常启动，
+     *    否则板子最需要诊断的时候反而既没有 CLI 也没有看门狗 */
     if (current_shunt_init() == 0U) {
         foc_motor_fault(&g_foc_motors[0], FOC_FAULT_CURRENT_SENSE);
-        g_foc_state_diag = (uint8_t)g_foc_motors[0].state;
-        return;
-    }
+    } else {
+        /* 4. PWM 定时器安全上电（MOE 保持关闭） */
+        foc_board_init();
 
-    /* 4. PWM 定时器安全上电（MOE 保持关闭） */
-    foc_board_init();
-
-    /* 5. 三相零偏校准（阻塞，约 130ms @16kHz×2×1024 采样） */
-    if (current_shunt_calibrate(500U) == 0U) {
-        foc_motor_fault(&g_foc_motors[0], FOC_FAULT_CURRENT_SENSE);
+        /* 5. 三相零偏校准（阻塞，约 130ms @16kHz×2×1024 采样） */
+        if (current_shunt_calibrate(500U) == 0U) {
+            foc_motor_fault(&g_foc_motors[0], FOC_FAULT_CURRENT_SENSE);
+        }
     }
 
     g_foc_state_diag = (uint8_t)g_foc_motors[0].state;
@@ -168,9 +168,11 @@ void foc_app_init(void)
 #endif
 
     if (store_st != FOC_STORE_EMPTY) {
-        foc_cmd_print("config loaded from flash%s (Rs=%.4f Ls=%.2fuH)\r\n",
+        foc_cmd_print("config loaded from flash%s "
+                      "(pp=%.0f Rs=%.4f Ls=%.2fuH)\r\n",
                       (store_st == FOC_STORE_LOADED_CALIB)
                           ? " with calib offset" : "",
+                      (double)m0_p.pole_pairs,
                       (double)m0_p.rs_ohm, (double)(m0_p.ls_henry * 1e6f));
     }
 }
