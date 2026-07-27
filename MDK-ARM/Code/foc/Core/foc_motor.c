@@ -490,6 +490,8 @@ void foc_motor_disarm(foc_motor_t *m)
 
 uint8_t foc_motor_set_mode(foc_motor_t *m, foc_mode_t mode)
 {
+    foc_mode_t old_mode = m->mode;
+
     if (m->mode == mode) {
         return 1U;
     }
@@ -510,6 +512,11 @@ uint8_t foc_motor_set_mode(foc_motor_t *m, foc_mode_t mode)
 
     m->mode = mode;
     m->target = 0.0f;
+    if ((old_mode == FOC_MODE_OPENLOOP_VF) ||
+        (mode == FOC_MODE_OPENLOOP_VF)) {
+        foc_pid_reset(&m->pid_id);
+        foc_pid_reset(&m->pid_iq);
+    }
     foc_pid_reset(&m->pid_vel);
     foc_pid_reset(&m->pid_pos);
     m->vel_ref_rpm = 0.0f;

@@ -118,26 +118,46 @@ void abz_encoder_deinit(void)
 void abz_encoder_update(void)
 {
     uint16_t cur_cnt;
+    uint16_t index_cnt = 0U;
+    uint8_t index_request = 0U;
+    uint32_t primask;
     int32_t delta;
     float delta_filtered;
     float velocity_raw;
 
-    /* 先处理 Z/index 事件：在同一上下文修改 CNT/last_cnt/position，
-     * 避免与本函数其余部分产生竞争 */
+    /* 原子地取走 Z 事件，避免 EXTI 在 index_hw_cnt 读取与请求清除之间
+     * 写入一个新事件。临界区只包含三个内存访问。 */
+    primask = __get_PRIMASK();
+    __disable_irq();
     if (enc.index_request != 0U) {
-        uint16_t index_cnt = enc.index_hw_cnt;
+        index_cnt = enc.index_hw_cnt;
+        enc.index_request = 0U;
+        index_request = 1U;
+    }
+    if (primask == 0U) {
+        __enable_irq();
+    }
+
+    /* 先处理 Z/index 事件。index_hw_cnt 是 Z 边沿时刻，而当前 CNT 已经
+     * 继续运行；零位重映射时必须保留这段 post-index 增量。 */
+    if (index_request != 0U) {
+        uint16_t post_cnt;
         int32_t index_delta = abz_calc_delta(index_cnt, enc.last_cnt);
+        int32_t post_index_delta;
+
+        cur_cnt = (uint16_t)__HAL_TIM_GET_COUNTER(&ABZ_ENCODER_TIM_HANDLE);
+        post_index_delta = abz_calc_delta(cur_cnt, index_cnt);
 
         enc.index_position_cnt = abz_wrap_position(enc.position_cnt + index_delta);
         enc.index_pending = 1U;
-        enc.index_request = 0U;
         enc.is_calibrated = 1U;
 
         if (enc.zero_on_index != 0U) {
-            __HAL_TIM_SET_COUNTER(&ABZ_ENCODER_TIM_HANDLE, 0);
-            enc.last_cnt = 0U;
-            enc.position_cnt = 0;
-            enc.angle_rad = 0.0f;
+            post_cnt = (uint16_t)post_index_delta;
+            __HAL_TIM_SET_COUNTER(&ABZ_ENCODER_TIM_HANDLE, post_cnt);
+            enc.last_cnt = post_cnt;
+            enc.position_cnt = abz_wrap_position(post_index_delta);
+            enc.angle_rad = (float)enc.position_cnt * ABZ_RAD_PER_CNT;
             return;
         }
     }

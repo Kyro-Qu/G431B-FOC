@@ -40,7 +40,9 @@ typedef enum {
     CURRENT_SHUNT_FAULT_CONTEXT_NOT_CONSUMED,
     CURRENT_SHUNT_FAULT_INVALID_PAIR,
     CURRENT_SHUNT_FAULT_OFFSET_RANGE,
-    CURRENT_SHUNT_FAULT_INVALID_WINDOW
+    CURRENT_SHUNT_FAULT_INVALID_WINDOW,
+    /* ADC context started, but ADC2 JEOS was absent for two TIM1 updates. */
+    CURRENT_SHUNT_FAULT_ADC_RESULT_TIMEOUT
 } current_shunt_fault_t;
 
 /* Last initialization/calibration stage reached by the driver. */
@@ -76,7 +78,8 @@ typedef struct {
     volatile uint32_t sample_count;
     volatile uint32_t tim_update_count;
     volatile uint32_t adc_irq_count;
-    volatile uint32_t adc_deferred_count;
+    volatile uint32_t adc_deferred_count; /* Lifetime tolerated/failed delays. */
+    volatile uint8_t adc_deferred_consecutive; /* 0/1 normal, 2 trips fault 22. */
     volatile uint32_t adc1_isr;
     volatile uint32_t adc2_isr;
     volatile uint32_t adc1_jsqr;

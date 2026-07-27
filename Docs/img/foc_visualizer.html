@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FOC 坐标系可视化</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f5f5f7;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            color: #333;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        canvas {
+            background-color: #fafafa;
+            border: 1px solid #eaeaea;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        input[type=range] {
+            width: 300px;
+            cursor: pointer;
+        }
+        .legend {
+            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            font-size: 14px;
+        }
+        .legend span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .color-box {
+            width: 12px;
+            height: 12px;
+            display: inline-block;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>电机 FOC 坐标系动态演示</h2>
+    <canvas id="focCanvas" width="550" height="550"></canvas>
+    
+    <div class="controls">
+        <label for="angleSlider">转子电角度:</label>
+        <input type="range" id="angleSlider" min="0" max="360" value="0">
+        <span id="angleValue">0°</span>
+    </div>
+
+    <div class="legend">
+        <span><div class="color-box" style="background: #888;"></div> ABC 轴 (静止)</span>
+        <span><div class="color-box" style="background: #007aff;"></div> αβ 轴 (静止)</span>
+        <span><div class="color-box" style="background: #ff3b30;"></div> dq 轴 (旋转)</span>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('focCanvas');
+    const ctx = canvas.getContext('2d');
+    const slider = document.getElementById('angleSlider');
+    const angleValue = document.getElementById('angleValue');
+
+    // 画布中心坐标
+    const CX = canvas.width / 2;
+    const CY = canvas.height / 2;
+
+    // 绘图主函数
+    function draw() {
+        // 清空画布
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // 获取当前角度
+        const thetaDeg = parseFloat(slider.value);
+        const thetaRad = thetaDeg * Math.PI / 180;
+        angleValue.textContent = thetaDeg + '°';
+
+        // 1. 绘制定子三相坐标系 (ABC) - 画得最长，放在最外圈 (长度 220)
+        drawAxis(0, 'A (U)', '#888', false, 1, 220);
+        drawAxis(120, 'B (V)', '#888', false, 1, 220);
+        drawAxis(240, 'C (W)', '#888', false, 1, 220);
+
+        // 2. 绘制静止正交坐标系 (αβ) - 长度适中 (长度 170)
+        drawAxis(0, 'α', '#007aff', true, 2, 170);
+        drawAxis(90, 'β', '#007aff', true, 2, 170);
+
+        // 3. 绘制转子
+        drawRotor(thetaRad);
+
+        // 4. 绘制旋转正交坐标系 (dq) - 画得稍微短一点，紧贴转子 (长度 130)
+        drawAxis(thetaDeg, 'd', '#ff3b30', false, 2.5, 130);
+        drawAxis(thetaDeg + 90, 'q', '#ff3b30', false, 2.5, 130);
+    }
+
+    // 绘制轴线的基础函数 (带有 axisLength 参数)
+    function drawAxis(angleDeg, label, color, isDashed, lineWidth, axisLength) {
+        const rad = angleDeg * Math.PI / 180;
+        const x = CX + axisLength * Math.cos(rad);
+        const y = CY - axisLength * Math.sin(rad);
+
+        ctx.beginPath();
+        ctx.moveTo(CX, CY);
+        ctx.lineTo(x, y);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        if (isDashed) {
+            ctx.setLineDash([6, 6]); // 虚线样式
+        } else {
+            ctx.setLineDash([]); // 实线样式
+        }
+        ctx.stroke();
+
+        // 绘制文字标签
+        ctx.fillStyle = color;
+        ctx.font = 'bold 16px Arial';
+        ctx.setLineDash([]); // 恢复实线
+        
+        // 文字偏移，让标签稍微远离线段末端，避免重叠
+        const textOffsetX = Math.cos(rad) * 15;
+        const textOffsetY = -Math.sin(rad) * 15;
+        ctx.fillText(label, x + textOffsetX - 15, y + textOffsetY + 5);
+    }
+
+    // 绘制转子的函数
+    function drawRotor(thetaRad) {
+        const radius = 50;
+        ctx.save();
+        
+        // 将画布原点移到中心并旋转
+        // Canvas 的旋转是顺时针的，而电机学中逆时针为正方向，所以取负
+        ctx.translate(CX, CY);
+        ctx.rotate(-thetaRad); 
+
+        // 绘制 N 极 (红色半圆)
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, -Math.PI/2, Math.PI/2, false);
+        ctx.fillStyle = 'rgba(255, 59, 48, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = '#ff3b30';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // 绘制 S 极 (蓝色半圆)
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, Math.PI/2, -Math.PI/2, false);
+        ctx.fillStyle = 'rgba(0, 122, 255, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = '#007aff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // 标注 N 和 S
+        ctx.fillStyle = '#ff3b30';
+        ctx.font = 'bold 18px Arial';
+        ctx.fillText('N', radius/2 - 5, 6);
+        
+        ctx.fillStyle = '#007aff';
+        ctx.fillText('S', -radius/2 - 5, 6);
+
+        ctx.restore();
+    }
+
+    // 监听滑块变化事件
+    slider.addEventListener('input', draw);
+
+    // 初始渲染
+    draw();
+</script>
+</body>
+</html>

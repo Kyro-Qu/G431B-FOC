@@ -77,6 +77,7 @@ static volatile uint32_t pending_trigger_edge = LL_ADC_INJ_TRIG_EXT_RISING;
 
 /* Context ownership and module lifecycle flags. */
 static volatile uint8_t contexts_armed = 0U;
+static volatile uint8_t adc_deferred_consecutive = 0U;
 static volatile uint8_t initialized = 0U;
 static volatile uint8_t ready = 0U;
 
@@ -100,6 +101,8 @@ static void current_shunt_snapshot(void)
     g_current_shunt_diag.active_pair = (uint8_t)active_pair;
     g_current_shunt_diag.pending_pair = (uint8_t)pending_pair;
     g_current_shunt_diag.contexts_armed = contexts_armed;
+    g_current_shunt_diag.adc_deferred_consecutive =
+        adc_deferred_consecutive;
 }
 
 /*
@@ -249,6 +252,7 @@ uint8_t current_shunt_init(void)
     active_pair = CURRENT_PAIR_UV;
     pending_trigger_edge = LL_ADC_INJ_TRIG_EXT_RISING;
     contexts_armed = 0U;
+    adc_deferred_consecutive = 0U;
     initialized = 0U;
     ready = 0U;
     g_current_shunt_diag.state = (uint8_t)CURRENT_SHUNT_IDLE;
@@ -405,7 +409,9 @@ uint8_t current_shunt_adc_irq(void)
     g_current_shunt_diag.adc1_raw = adc1_raw;
     g_current_shunt_diag.adc2_raw = adc2_raw;
     contexts_armed = 0U;
+    adc_deferred_consecutive = 0U;
     g_current_shunt_diag.contexts_armed = 0U;
+    g_current_shunt_diag.adc_deferred_consecutive = 0U;
 
     if (g_current_shunt_diag.state == (uint8_t)CURRENT_SHUNT_CAL_UV) {
         if (active_pair != CURRENT_PAIR_UV) {
@@ -519,7 +525,8 @@ void current_shunt_tim_update_irq(void)
      * JSQR is cleared by hardware when the queued conversion starts.  If the
      * ADC IRQ has not yet consumed JDR1, keep active_pair unchanged and skip
      * this one context submission.  This can occur when CCR4 is immediately
-     * before a timer update; it is not a hardware queue failure.
+     * before a timer update. One deferred update is tolerated; two consecutive
+     * updates without the ADC result mean the fast loop has stopped.
      */
     if (contexts_armed != 0U) {
         if ((ADC1->JSQR != 0U) || (ADC2->JSQR != 0U)) {
@@ -528,7 +535,11 @@ void current_shunt_tim_update_irq(void)
         }
 
         ++g_current_shunt_diag.adc_deferred_count;
+        ++adc_deferred_consecutive;
         current_shunt_snapshot();
+        if (adc_deferred_consecutive >= 2U) {
+            current_shunt_fail(CURRENT_SHUNT_FAULT_ADC_RESULT_TIMEOUT);
+        }
         return;
     }
 

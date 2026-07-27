@@ -21,6 +21,8 @@
 #define IDENT_LS_VOLTAGE_V     0.15f   /* Ls 方波幅值（20µH 时纹波约 ±0.23A） */
 #define IDENT_LS_CYCLES        4096U   /* Ls 记账拍数（每极性2拍，共约512ms） */
 #define IDENT_LS_SKIP          8U      /* 起始丢弃拍数（等电流进入稳态三角波） */
+#define IDENT_LS_MIN_H         0.0000005f /* 0.5 µH，排除噪声/数值异常 */
+#define IDENT_LS_MAX_H         0.02f      /* 20 mH，超出本驱动适用范围 */
 
 static foc_motor_t *ident_motor = 0;
 static foc_ident_state_t ident_state = FOC_IDENT_IDLE;
@@ -35,7 +37,7 @@ static float rs_i_sum = 0.0f;
 static uint32_t rs_samples = 0U;
 
 /* Ls 阶段累计（快环钩子上下文写，任务上下文只在结束后读） */
-static volatile float ls_vs_sum = 0.0f;   /* Σ 极性·(V - Rs·i)·dt */
+static volatile float ls_vs_sum = 0.0f;   /* Σ 极性·(Vapplied - Rs·i)·dt */
 static volatile float ls_di_sum = 0.0f;   /* Σ 极性·Δi */
 static volatile uint32_t ls_count = 0U;
 static float ls_i_prev = 0.0f;
@@ -92,9 +94,10 @@ static void ident_ls_hook(foc_motor_t *m)
         /* 稳定拍：这个采样间隔内 PWM 输出恒为 pol·V */
         if (ls_count >= IDENT_LS_SKIP) {
             float pol = (float)ls_pol_applied;
+            float applied_v = pol * IDENT_LS_VOLTAGE_V;
 
             ls_vs_sum += pol *
-                (IDENT_LS_VOLTAGE_V - (pol * ident_result.rs_ohm * ls_i_prev)) *
+                (applied_v - (ident_result.rs_ohm * ls_i_prev)) *
                 m->dt_fast;
             ls_di_sum += pol * (i_now - ls_i_prev);
         }
@@ -255,17 +258,19 @@ void foc_ident_task(void)
     case FOC_IDENT_LS:
         if (ls_count >= (IDENT_LS_CYCLES + IDENT_LS_SKIP)) {
             float di = ls_di_sum;
+            float ls;
 
             m->test_hook = 0;
             if ((di < 1e-3f) && (di > -1e-3f)) {
                 ident_fail("no current response (Ls too big or wiring)");
                 break;
             }
-            ident_result.ls_henry = ls_vs_sum / di;
-            if (ident_result.ls_henry < 0.0f) {
-                ident_fail("negative inductance (noise)");
+            ls = ls_vs_sum / di;
+            if (!((ls >= IDENT_LS_MIN_H) && (ls <= IDENT_LS_MAX_H))) {
+                ident_fail("Ls out of range or noisy");
                 break;
             }
+            ident_result.ls_henry = ls;
             ident_result.valid = 1U;
             ident_cleanup(m);
             ident_set_state(FOC_IDENT_DONE);

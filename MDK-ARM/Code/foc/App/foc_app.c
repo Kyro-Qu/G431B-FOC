@@ -210,8 +210,9 @@ void foc_app_task(void)
     /* 串口命令 */
     foc_cmd_task();
 
-    /* 健康监测：运行中电流采样链路失效 → 立即故障停机 */
-    if ((m0->state == FOC_STATE_RUN) &&
+    /* 采样故障不可在 IDLE/CALIB 中被隐藏。驱动已经关闭 MOE，这里把
+     * 轴状态统一锁存为 FAULT，防止下一次按键再次尝试使能功率级。 */
+    if ((m0->state != FOC_STATE_FAULT) &&
         (current_shunt_is_ready() == 0U)) {
         foc_motor_fault(m0, FOC_FAULT_CURRENT_SENSE);
     }

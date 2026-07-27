@@ -3,7 +3,7 @@
 <title>Static Call Graph - [FOC_G431\FOC_G431.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image FOC_G431\FOC_G431.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060061: Last Updated: Sun Jul 26 22:09:37 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060061: Last Updated: Mon Jul 27 01:48:37 2026
 <BR><P>
 <H3>Maximum Stack Usage =        384 bytes + Unknown(Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
@@ -857,10 +857,10 @@ Global Symbols
 <P><STRONG><a name="[b8]"></a>HAL_FLASH_Program</STRONG> (Thumb, 156 bytes, Stack size 56 bytes, stm32g4xx_hal_flash.o(i.HAL_FLASH_Program))
 <BR><BR>[Stack]<UL><LI>Max Depth = 72<LI>Call Chain = HAL_FLASH_Program &rArr; FLASH_WaitForLastOperation
 </UL>
-<BR>[Calls]<UL><LI><a href="#[b7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;FLASH_FlushCaches
-<LI><a href="#[93]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;FLASH_WaitForLastOperation
-<LI><a href="#[ba]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;FLASH_Program_Fast
+<BR>[Calls]<UL><LI><a href="#[ba]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;FLASH_Program_Fast
 <LI><a href="#[b9]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;FLASH_Program_DoubleWord
+<LI><a href="#[b7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;FLASH_FlushCaches
+<LI><a href="#[93]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;FLASH_WaitForLastOperation
 </UL>
 <BR>[Called By]<UL><LI><a href="#[187]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;store_program
 </UL>
@@ -907,9 +907,6 @@ Global Symbols
 <LI><a href="#[c7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_RCC_ClockConfig
 <LI><a href="#[12c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;system_power_checkpoint
 <LI><a href="#[bb]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GPIO_EXTI_Callback
-<LI><a href="#[93]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;FLASH_WaitForLastOperation
-<LI><a href="#[b3]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_Delay
-<LI><a href="#[8d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ADC_Disable
 <LI><a href="#[165]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_ident_task
 <LI><a href="#[13f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_cmd_print
 <LI><a href="#[164]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_calib_task
@@ -919,6 +916,9 @@ Global Symbols
 <LI><a href="#[104]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;UART_WaitOnFlagUntilTimeout
 <LI><a href="#[102]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;UART_CheckIdleState
 <LI><a href="#[145]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_ident_start
+<LI><a href="#[b3]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_Delay
+<LI><a href="#[8d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ADC_Disable
+<LI><a href="#[93]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;FLASH_WaitForLastOperation
 </UL>
 
 <P><STRONG><a name="[112]"></a>HAL_IncTick</STRONG> (Thumb, 12 bytes, Stack size 0 bytes, stm32g4xx_hal.o(i.HAL_IncTick))
@@ -1308,15 +1308,15 @@ Global Symbols
 <P><STRONG><a name="[f6]"></a>HAL_UART_IRQHandler</STRONG> (Thumb, 782 bytes, Stack size 24 bytes, stm32g4xx_hal_uart.o(i.HAL_UART_IRQHandler))
 <BR><BR>[Stack]<UL><LI>Max Depth = 100<LI>Call Chain = HAL_UART_IRQHandler &rArr; HAL_UARTEx_RxEventCallback &rArr; HAL_UARTEx_ReceiveToIdle_DMA &rArr; UART_Start_Receive_DMA &rArr; HAL_DMA_Start_IT &rArr; DMA_SetConfig
 </UL>
-<BR>[Calls]<UL><LI><a href="#[f8]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_DMA_Abort_IT
-<LI><a href="#[f9]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_DMA_Abort
-<LI><a href="#[f7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;UART_EndRxTransfer
+<BR>[Calls]<UL><LI><a href="#[f7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;UART_EndRxTransfer
 <LI><a href="#[fb]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_UART_TxCpltCallback
 <LI><a href="#[fa]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_UARTEx_WakeupCallback
 <LI><a href="#[fc]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_UARTEx_TxFifoEmptyCallback
 <LI><a href="#[fd]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_UARTEx_RxFifoFullCallback
 <LI><a href="#[f5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_UART_ErrorCallback
 <LI><a href="#[f1]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_UARTEx_RxEventCallback
+<LI><a href="#[f9]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_DMA_Abort
+<LI><a href="#[f8]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_DMA_Abort_IT
 </UL>
 <BR>[Called By]<UL><LI><a href="#[30]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;USART2_IRQHandler
 </UL>
@@ -1615,8 +1615,8 @@ Global Symbols
 <P><STRONG><a name="[6a]"></a>abz_encoder_set_zero_on_index</STRONG> (Thumb, 12 bytes, Stack size 0 bytes, abz_encoder.o(i.abz_encoder_set_zero_on_index))
 <BR>[Address Reference Count : 1]<UL><LI> foc_board_g431.o(.constdata)
 </UL>
-<P><STRONG><a name="[66]"></a>abz_encoder_update</STRONG> (Thumb, 290 bytes, Stack size 32 bytes, abz_encoder.o(i.abz_encoder_update))
-<BR><BR>[Stack]<UL><LI>Max Depth = 32<LI>Call Chain = abz_encoder_update
+<P><STRONG><a name="[66]"></a>abz_encoder_update</STRONG> (Thumb, 350 bytes, Stack size 40 bytes, abz_encoder.o(i.abz_encoder_update))
+<BR><BR>[Stack]<UL><LI>Max Depth = 40<LI>Call Chain = abz_encoder_update
 </UL>
 <BR>[Calls]<UL><LI><a href="#[12a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;abz_wrap_position
 <LI><a href="#[129]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;abz_calc_delta
@@ -1634,7 +1634,7 @@ Global Symbols
 <BR><BR>[Called By]<UL><LI><a href="#[15f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_motor_fast_loop
 </UL>
 
-<P><STRONG><a name="[8a]"></a>current_shunt_adc_irq</STRONG> (Thumb, 374 bytes, Stack size 56 bytes, current_shunt.o(i.current_shunt_adc_irq))
+<P><STRONG><a name="[8a]"></a>current_shunt_adc_irq</STRONG> (Thumb, 380 bytes, Stack size 56 bytes, current_shunt.o(i.current_shunt_adc_irq))
 <BR><BR>[Stack]<UL><LI>Max Depth = 72<LI>Call Chain = current_shunt_adc_irq &rArr; current_shunt_reconstruct
 </UL>
 <BR>[Calls]<UL><LI><a href="#[14c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;current_shunt_snapshot
@@ -1656,14 +1656,14 @@ Global Symbols
 <P><STRONG><a name="[65]"></a>current_shunt_get_currents</STRONG> (Thumb, 36 bytes, Stack size 0 bytes, current_shunt.o(i.current_shunt_get_currents))
 <BR>[Address Reference Count : 1]<UL><LI> foc_board_g431.o(.constdata)
 </UL>
-<P><STRONG><a name="[151]"></a>current_shunt_init</STRONG> (Thumb, 266 bytes, Stack size 24 bytes, current_shunt.o(i.current_shunt_init))
+<P><STRONG><a name="[151]"></a>current_shunt_init</STRONG> (Thumb, 268 bytes, Stack size 24 bytes, current_shunt.o(i.current_shunt_init))
 <BR><BR>[Stack]<UL><LI>Max Depth = 64<LI>Call Chain = current_shunt_init &rArr; HAL_ADCEx_Calibration_Start &rArr; ADC_Disable
 </UL>
-<BR>[Calls]<UL><LI><a href="#[b3]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_Delay
-<LI><a href="#[94]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_ADCEx_Calibration_Start
-<LI><a href="#[14c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;current_shunt_snapshot
+<BR>[Calls]<UL><LI><a href="#[14c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;current_shunt_snapshot
 <LI><a href="#[14d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;current_shunt_fail
 <LI><a href="#[150]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;current_shunt_enable_adc
+<LI><a href="#[b3]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_Delay
+<LI><a href="#[94]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_ADCEx_Calibration_Start
 <LI><a href="#[152]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_OPAMP_Start
 <LI><a href="#[a9]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memclr4
 </UL>
@@ -1686,7 +1686,7 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[63]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;m0_pwm_set_compare
 </UL>
 
-<P><STRONG><a name="[ee]"></a>current_shunt_tim_update_irq</STRONG> (Thumb, 236 bytes, Stack size 24 bytes, current_shunt.o(i.current_shunt_tim_update_irq))
+<P><STRONG><a name="[ee]"></a>current_shunt_tim_update_irq</STRONG> (Thumb, 248 bytes, Stack size 24 bytes, current_shunt.o(i.current_shunt_tim_update_irq))
 <BR><BR>[Stack]<UL><LI>Max Depth = 32<LI>Call Chain = current_shunt_tim_update_irq &rArr; current_shunt_fail
 </UL>
 <BR>[Calls]<UL><LI><a href="#[14c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;current_shunt_snapshot
@@ -1906,7 +1906,7 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[132]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;cmd_execute
 </UL>
 
-<P><STRONG><a name="[165]"></a>foc_ident_task</STRONG> (Thumb, 674 bytes, Stack size 56 bytes, foc_ident.o(i.foc_ident_task))
+<P><STRONG><a name="[165]"></a>foc_ident_task</STRONG> (Thumb, 678 bytes, Stack size 56 bytes, foc_ident.o(i.foc_ident_task))
 <BR><BR>[Stack]<UL><LI>Max Depth = 176<LI>Call Chain = foc_ident_task &rArr; ident_fail &rArr; foc_cmd_print &rArr; HAL_UART_Transmit &rArr; UART_WaitOnFlagUntilTimeout &rArr; UART_EndRxTransfer
 </UL>
 <BR>[Calls]<UL><LI><a href="#[8e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
@@ -2038,7 +2038,7 @@ Global Symbols
 <BR><BR>[Called By]<UL><LI><a href="#[164]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_calib_task
 </UL>
 
-<P><STRONG><a name="[13e]"></a>foc_motor_set_mode</STRONG> (Thumb, 158 bytes, Stack size 24 bytes, foc_motor.o(i.foc_motor_set_mode))
+<P><STRONG><a name="[13e]"></a>foc_motor_set_mode</STRONG> (Thumb, 182 bytes, Stack size 24 bytes, foc_motor.o(i.foc_motor_set_mode))
 <BR><BR>[Stack]<UL><LI>Max Depth = 24<LI>Call Chain = foc_motor_set_mode
 </UL>
 <BR>[Calls]<UL><LI><a href="#[174]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_pid_reset
@@ -2676,7 +2676,7 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[165]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;foc_ident_task
 </UL>
 
-<P><STRONG><a name="[5f]"></a>ident_ls_hook</STRONG> (Thumb, 176 bytes, Stack size 0 bytes, foc_ident.o(i.ident_ls_hook))
+<P><STRONG><a name="[5f]"></a>ident_ls_hook</STRONG> (Thumb, 172 bytes, Stack size 0 bytes, foc_ident.o(i.ident_ls_hook))
 <BR>[Address Reference Count : 1]<UL><LI> foc_ident.o(i.foc_ident_task)
 </UL>
 <P><STRONG><a name="[129]"></a>abz_calc_delta</STRONG> (Thumb, 26 bytes, Stack size 0 bytes, abz_encoder.o(i.abz_calc_delta))
@@ -2718,7 +2718,7 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[8a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;current_shunt_adc_irq
 </UL>
 
-<P><STRONG><a name="[14c]"></a>current_shunt_snapshot</STRONG> (Thumb, 70 bytes, Stack size 0 bytes, current_shunt.o(i.current_shunt_snapshot))
+<P><STRONG><a name="[14c]"></a>current_shunt_snapshot</STRONG> (Thumb, 76 bytes, Stack size 0 bytes, current_shunt.o(i.current_shunt_snapshot))
 <BR><BR>[Called By]<UL><LI><a href="#[8a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;current_shunt_adc_irq
 <LI><a href="#[ee]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;current_shunt_tim_update_irq
 <LI><a href="#[151]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;current_shunt_init
