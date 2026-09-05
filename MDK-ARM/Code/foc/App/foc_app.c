@@ -317,6 +317,12 @@ void foc_app_task(void)
 
     /* 母线电压 100Hz 周期更新 */
     foc_board_vbus_update();
+#if (FOC_VBUS_ENABLE && FOC_VBUS_AUTO_UPDATE_DRV)
+    /* 动态将实时测得的母线电压注入功率级接口：
+     * 1. 快环 SVPWM、电压圆限幅直接基于真实供电计算，消除电源电压波动带来的占空比误差；
+     * 2. 弱磁控制环电压目标 v_target 自动按实时母线动态伸缩，高压充分利用、低压提前深去磁。 */
+    foc_board_update_driver_vbus(foc_board_get_vbus_v());
+#endif
 
     /* 校准与参数辨识状态机 */
     foc_calib_task();

@@ -69,6 +69,9 @@
 #define FOC_VBUS_PARTITIONING_FACTOR   0.096255655f  /* 24V 档分压比 */
 #define FOC_VBUS_LPF_ALPHA             0.10f         /* 慢速一阶滤波系数 */
 #define FOC_VBUS_SAMPLE_INTERVAL_MS    10U           /* 100Hz 慢环采样 */
+#define FOC_VBUS_AUTO_UPDATE_DRV       1U            /* 1: 慢环自动将实时 Vbus 注入控制环；0: 使用固定 FOC_UDC_V */
+#define FOC_VBUS_VALID_MIN_V           7.0f          /* 安全下限 V（低于此值视为掉电/异常，不送入控制环） */
+#define FOC_VBUS_VALID_MAX_V           52.0f         /* 安全上限 V */
 
 /* ======================== 3. 电机 0 参数（DJI 2312S 实测） ======================== */
 

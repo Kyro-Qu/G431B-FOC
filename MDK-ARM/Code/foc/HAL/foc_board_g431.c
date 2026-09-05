@@ -172,7 +172,7 @@ static void m0_pwm_set_compare(uint32_t ccr_a, uint32_t ccr_b,
 
 /* ======================== 轴 0：接口表 ======================== */
 
-const foc_driver_if_t g_board_m0_driver = {
+foc_driver_if_t g_board_m0_driver = {
     .enable      = m0_pwm_enable,
     .disable     = m0_pwm_disable,
     .bootstrap   = m0_pwm_bootstrap,
@@ -375,4 +375,13 @@ float foc_board_get_vbus_v(void)
 #endif
     return FOC_UDC_V;
 }
+
+void foc_board_update_driver_vbus(float vbus_v)
+{
+    /* 安全防御区间：只有处于合法工作区内的母线电压才允许动态注入控制环 */
+    if ((vbus_v >= FOC_VBUS_VALID_MIN_V) && (vbus_v <= FOC_VBUS_VALID_MAX_V)) {
+        g_board_m0_driver.u_dc = vbus_v;
+    }
+}
+
 

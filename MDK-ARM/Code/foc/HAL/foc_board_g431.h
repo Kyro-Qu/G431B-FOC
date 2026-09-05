@@ -33,7 +33,7 @@ extern volatile uint8_t g_foc_pwm_stage;
 extern volatile uint8_t g_foc_pwm_enabled;
 
 /** 轴 0 接口表 */
-extern const foc_driver_if_t  g_board_m0_driver;
+extern foc_driver_if_t        g_board_m0_driver;
 extern const foc_current_if_t g_board_m0_current;
 extern const foc_sensor_if_t  g_board_m0_sensor;
 
@@ -90,6 +90,8 @@ void foc_board_vbus_init(void);
 void foc_board_vbus_update(void);
 /** 读取当前实时测得的母线电压 V（未就绪时回退返回 FOC_UDC_V 标称值） */
 float foc_board_get_vbus_v(void);
+/** 将安全合法的母线电压更新进轴0功率级驱动接口（供控制环与弱磁闭环使用） */
+void foc_board_update_driver_vbus(float vbus_v);
 
 #ifdef __cplusplus
 }

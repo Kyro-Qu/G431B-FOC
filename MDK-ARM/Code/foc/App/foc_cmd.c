@@ -128,7 +128,7 @@ static void cmd_print_status(void)
             "iu=%.3fA iv=%.3fA iw=%.3fA\r\n"
             "i_soft=%.3fA peak=%.3fA\r\n"
             "vd=%.3fV vq=%.3fV limit=%.2fA trip=%.2fA\r\n"
-            "vbus=%.2fV (raw=%u %s) udc_cfg=%.2fV\r\n"
+            "vbus=%.2fV (raw=%u %s) udc_drv=%.2fV\r\n"
             "trip_i=%.3f/%.3f/%.3fA trip_soft=%.3fA hard=%u\r\n"
             "calib=%u%s\r\n"
             "fault=%u%s\r\n",
