@@ -55,6 +55,21 @@
 /** 母线电压 V（4S 锂电标称。接可调电源时改这里） */
 #define FOC_UDC_V               14.4f      /* 当前电机额定/实接母线电压 */
 
+/* ---- 母线电压实时采样配置（PA0 -> ADC1_IN1） ----
+ * 硬件真值（火柴 FOC bd6s40a_mini_g431 V2 原理图）：
+ * 上臂 R29=169kΩ，下臂 R30=18kΩ
+ * 24V 档（默认，PB10=Low）：
+ *   分压比 = 18 / (169 + 18) ≈ 0.096255655f
+ * 48V 档（PB10=High 时 Q48 并联 R58=18k，下臂等效 9k）：
+ *   分压比 = 9 / (169 + 9) ≈ 0.050556f
+ * 14.4V 输入时 PA0 电压 ≈ 1.386V，对应 12-bit ADC 约 1720 counts，安全充裕。
+ */
+#define FOC_VBUS_ENABLE                1U
+#define FOC_VBUS_ADC_VREF              3.30f
+#define FOC_VBUS_PARTITIONING_FACTOR   0.096255655f  /* 24V 档分压比 */
+#define FOC_VBUS_LPF_ALPHA             0.10f         /* 慢速一阶滤波系数 */
+#define FOC_VBUS_SAMPLE_INTERVAL_MS    10U           /* 100Hz 慢环采样 */
+
 /* ======================== 3. 电机 0 参数（DJI 2312S 实测） ======================== */
 
 /* 7 对极（12N14P 外转子）：2026-09-05 vf100 比值实验实测 85.0/100=0.850

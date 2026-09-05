@@ -23,9 +23,15 @@
 #include "foc_motor.h"
 #include "foc_config.h"
 
+#include "../Core/foc_motor.h"
+#include "foc_anticog.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** 轴 0 抗齿槽力矩补偿器对象 */
+extern foc_anticog_t g_m0_anticog;
 
 /** 全部电机轴对象（轴 0 = 本板硬件，轴 1 = 虚拟演示轴） */
 extern foc_motor_t g_foc_motors[FOC_NUM_AXES];

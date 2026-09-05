@@ -19,6 +19,7 @@
 #ifndef FOC_BOARD_G431_H
 #define FOC_BOARD_G431_H
 
+#include <stdint.h>
 #include "foc_types.h"
 #include "foc_config.h"
 
@@ -72,6 +73,23 @@ void foc_board_cpu_sample(uint32_t cycles);
 void foc_board_watchdog_init(uint32_t timeout_ms);
 /** 喂狗（主循环每圈调用） */
 void foc_board_watchdog_kick(void);
+
+/* ---- 母线电压实时采样接口（PA0 / ADC1_IN1） ---- */
+typedef struct {
+    volatile uint16_t raw_adc;       /* 最新 ADC1 原始采样值 0..4095 */
+    volatile float    voltage_v;     /* 一阶低通滤波后的母线电压真值 V */
+    volatile uint8_t  valid;         /* 1=已完成至少一次有效转换 */
+    volatile uint32_t sample_count;  /* 采样累计计数 */
+} foc_vbus_diag_t;
+
+extern volatile foc_vbus_diag_t g_foc_vbus_diag;
+
+/** 初始化 PA0 模拟输入及 ADC1 Regular 序列（保持电流注入序列不变） */
+void foc_board_vbus_init(void);
+/** 周期性触发并更新母线电压（主循环 100Hz 轮询调用） */
+void foc_board_vbus_update(void);
+/** 读取当前实时测得的母线电压 V（未就绪时回退返回 FOC_UDC_V 标称值） */
+float foc_board_get_vbus_v(void);
 
 #ifdef __cplusplus
 }

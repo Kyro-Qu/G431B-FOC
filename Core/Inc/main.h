@@ -167,7 +167,8 @@ void system_fault_capture(uint32_t exception);
 #define ABZ_Z_EXTI_IRQn EXTI9_5_IRQn
 
 /* USER CODE BEGIN Private defines */
-
+#define VBUS_ADC_Pin GPIO_PIN_0
+#define VBUS_ADC_GPIO_Port GPIOA
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

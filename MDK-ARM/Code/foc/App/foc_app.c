@@ -18,6 +18,7 @@
 
 foc_motor_t g_foc_motors[FOC_NUM_AXES];
 volatile uint8_t g_foc_state_diag = (uint8_t)FOC_STATE_IDLE;
+foc_anticog_t g_m0_anticog;
 
 /*
  * V/F 上电必须是零给定。旧版默认 0.3 V / 100 RPM，且 RUN 时从这里反复
@@ -60,6 +61,18 @@ void foc_app_vf_reset_commands(void)
         foc_motor_openloop_spin(&g_foc_motors[0], 0.0f, 0.0f, 0.0f);
         g_foc_motors[0].vel_ref_rpm = 0.0f;
     }
+}
+
+/* ---------------- 轴 0 抗齿槽力矩适配 ---------------- */
+
+static float foc_anticog_feedforward_m0(float mech_angle)
+{
+    return foc_anticog_feedforward(&g_m0_anticog, mech_angle);
+}
+
+static void foc_anticog_sample_m0(float mech_angle, float iq_ref)
+{
+    foc_anticog_calib_sample(&g_m0_anticog, mech_angle, iq_ref);
 }
 
 /* ---------------- 轴 0 配置 ---------------- */
@@ -206,6 +219,10 @@ void foc_app_init(void)
      * Flash 校准，也让 V/F 的正 RPM 与编码器机械正方向保持一致。 */
     g_foc_motors[0].calib.direction = (int8_t)FOC_CALIB_DIRECTION;
 
+    /* 挂载抗齿槽补偿器钩子 */
+    g_foc_motors[0].anticog_hook = foc_anticog_feedforward_m0;
+    g_foc_motors[0].anticog_sample_hook = foc_anticog_sample_m0;
+
     /* 存储的校准偏移：标记 from_store，等 Z 重建零点后即可闭环
      * （按键/`calib` 触发的校准会走快速索引搜索） */
     if (store_st == FOC_STORE_LOADED_CALIB) {
@@ -247,14 +264,16 @@ void foc_app_init(void)
     }
 
     g_foc_state_diag = (uint8_t)g_foc_motors[0].state;
+    foc_anticog_init(&g_m0_anticog);
 
     /* 6. 通信：串口命令行 + VOFA 遥测 */
     foc_cmd_init();
     foc_telemetry_init();
 
-    /* 7. 稳定性设施：CPU 统计 + 独立看门狗。
+    /* 7. 稳定性设施：CPU 统计 + 母线采样 + 独立看门狗。
      *    看门狗必须放在所有阻塞初始化（含 130ms 零偏校准）之后 */
     foc_board_dwt_init();
+    foc_board_vbus_init();
 #if FOC_WATCHDOG_ENABLE
     foc_board_watchdog_init(FOC_WATCHDOG_TIMEOUT_MS);
 #endif
@@ -295,6 +314,9 @@ void foc_app_task(void)
 #if FOC_WATCHDOG_ENABLE
     foc_board_watchdog_kick();
 #endif
+
+    /* 母线电压 100Hz 周期更新 */
+    foc_board_vbus_update();
 
     /* 校准与参数辨识状态机 */
     foc_calib_task();

@@ -12,6 +12,7 @@
 #include "foc_calib.h"
 #include "main.h"
 #include "../Driver/current/current_shunt.h"
+#include "../HAL/foc_board_g431.h"
 
 extern UART_HandleTypeDef huart2;
 
@@ -98,15 +99,8 @@ void foc_telemetry_isr_tick(void)
 #if FOC_NUM_AXES >= 2
     frame.ch[15] = g_foc_motors[1].theta_e;
 #else
-    /*
-     * Speed-estimator diagnosis for the single-axis build:
-     *   ch2  = encoder driver's adaptive least-squares speed
-     *   ch15 = the speed actually used by the outer loops
-     *          (angle-PLL speed after median3 + adaptive 5/30 Hz BW2)
-     * ch3 already carries the speed reference, so both estimator layers can
-     * be compared with the command without changing the 16-channel frame.
-     */
-    frame.ch[15] = m0->velocity_filt_rpm;
+    /* 单轴模式下：ch15 输出实时母线电压 V（低通滤波值） */
+    frame.ch[15] = g_foc_vbus_diag.voltage_v;
 #endif
 
     (void)HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&frame, sizeof(frame));

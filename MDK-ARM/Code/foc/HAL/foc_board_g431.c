@@ -296,3 +296,83 @@ void foc_board_watchdog_kick(void)
 {
     IWDG->KR = 0x0000AAAAU;
 }
+
+/* ======================== 母线电压实时采样（PA0 / ADC1_IN1） ======================== */
+
+volatile foc_vbus_diag_t g_foc_vbus_diag = {
+    .raw_adc = 0U,
+    .voltage_v = FOC_UDC_V,
+    .valid = 0U,
+    .sample_count = 0U
+};
+
+static uint32_t s_vbus_last_tick = 0U;
+
+void foc_board_vbus_init(void)
+{
+    g_foc_vbus_diag.raw_adc = 0U;
+    g_foc_vbus_diag.voltage_v = FOC_UDC_V;
+    g_foc_vbus_diag.valid = 0U;
+    g_foc_vbus_diag.sample_count = 0U;
+    s_vbus_last_tick = HAL_GetTick();
+
+    /* 确保 PA0（ADC1_IN1）规则通道在 current_shunt_init() 重新校准后正确配置：
+     * 1. 序列长度 = 1（单个转换）；
+     * 2. Rank 1 = Channel 1 (PA0)；
+     * 3. 采样时间 = 92.5 cycles（匹配 16.3kΩ 分压阻抗）。
+     */
+    LL_ADC_REG_SetSequencerLength(ADC1, LL_ADC_REG_SEQ_SCAN_DISABLE);
+    LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_1, LL_ADC_CHANNEL_1);
+    LL_ADC_SetChannelSamplingTime(ADC1, LL_ADC_CHANNEL_1, LL_ADC_SAMPLINGTIME_92CYCLES_5);
+}
+
+void foc_board_vbus_update(void)
+{
+#if FOC_VBUS_ENABLE
+    uint32_t now = HAL_GetTick();
+
+    if ((uint32_t)(now - s_vbus_last_tick) < FOC_VBUS_SAMPLE_INTERVAL_MS) {
+        return;
+    }
+    s_vbus_last_tick = now;
+
+    /* 非阻塞状态机式转换：
+     * 1. 若当前没有规则转换正在进行，启动一次软件单次转换；
+     * 2. 若已有转换完成标志（EOC），读取结果并应用一阶滤波。
+     * 绝不使用阻塞等待 while(EOC)，完全零开销防中断饥饿。 */
+    if (LL_ADC_IsActiveFlag_EOC(ADC1) != 0U) {
+        uint32_t raw = LL_ADC_REG_ReadConversionData12(ADC1);
+        LL_ADC_ClearFlag_EOC(ADC1);
+
+        /* 换算母线电压: Vbus = Vadc / 分压比
+         * Vadc = raw * VREF / 4095.0f */
+        float vadc = (float)raw * (FOC_VBUS_ADC_VREF / 4095.0f);
+        float vbus_meas = vadc / FOC_VBUS_PARTITIONING_FACTOR;
+
+        if (g_foc_vbus_diag.valid == 0U) {
+            g_foc_vbus_diag.voltage_v = vbus_meas;
+            g_foc_vbus_diag.valid = 1U;
+        } else {
+            g_foc_vbus_diag.voltage_v += FOC_VBUS_LPF_ALPHA * (vbus_meas - g_foc_vbus_diag.voltage_v);
+        }
+        g_foc_vbus_diag.raw_adc = (uint16_t)raw;
+        g_foc_vbus_diag.sample_count++;
+    }
+
+    /* 若规则通道处于空闲（没有正在转换），触发下一次转换 */
+    if (LL_ADC_REG_IsConversionOngoing(ADC1) == 0U) {
+        LL_ADC_REG_StartConversion(ADC1);
+    }
+#endif
+}
+
+float foc_board_get_vbus_v(void)
+{
+#if FOC_VBUS_ENABLE
+    if (g_foc_vbus_diag.valid != 0U) {
+        return g_foc_vbus_diag.voltage_v;
+    }
+#endif
+    return FOC_UDC_V;
+}
+

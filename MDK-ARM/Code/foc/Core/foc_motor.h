@@ -139,6 +139,13 @@ typedef struct foc_motor {
      * 供参数辨识（Rs/Ls 方波注入）等测试例程改写 v_openloop。
      * 平时必须为 NULL。 */
     void (*test_hook)(struct foc_motor *m);
+
+    /* 抗齿槽力矩前馈钩子：慢环输出最终 iq_ref 之前调用，返回附加补偿电流 A。
+     * 为 NULL 时不启用。 */
+    float (*anticog_hook)(float mech_angle);
+
+    /* 抗齿槽标定采样钩子：慢环每拍调用，传入机械角与未补偿的 iq_ref */
+    void (*anticog_sample_hook)(float mech_angle, float iq_ref);
 } foc_motor_t;
 
 /* ======================== 生命周期 ======================== */

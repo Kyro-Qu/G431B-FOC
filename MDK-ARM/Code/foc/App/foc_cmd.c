@@ -12,6 +12,7 @@
 #include "foc_calib.h"
 #include "foc_ident.h"
 #include "foc_telemetry.h"
+#include "foc_anticog.h"
 #include "../Core/foc_port.h"
 #include "../Core/foc_utils.h"
 #include "../Driver/current/current_shunt.h"
@@ -127,6 +128,7 @@ static void cmd_print_status(void)
             "iu=%.3fA iv=%.3fA iw=%.3fA\r\n"
             "i_soft=%.3fA peak=%.3fA\r\n"
             "vd=%.3fV vq=%.3fV limit=%.2fA trip=%.2fA\r\n"
+            "vbus=%.2fV (raw=%u %s) udc_cfg=%.2fV\r\n"
             "trip_i=%.3f/%.3f/%.3fA trip_soft=%.3fA hard=%u\r\n"
             "calib=%u%s\r\n"
             "fault=%u%s\r\n",
@@ -152,6 +154,10 @@ static void cmd_print_status(void)
             (double)m->v_dq.q,
             (double)m->params.max_current_a,
             (double)m->safety.current_limit_a,
+            (double)g_foc_vbus_diag.voltage_v,
+            (unsigned)g_foc_vbus_diag.raw_adc,
+            (g_foc_vbus_diag.valid != 0U) ? "OK" : "INIT",
+            (double)m->drv->u_dc,
             (double)m->safety.trip_current_u_a,
             (double)m->safety.trip_current_v_a,
             (double)m->safety.trip_current_w_a,
@@ -230,6 +236,7 @@ static void cmd_print_help(void)
         "  pos [kp|ki|vkp|accel|vmax <value>]\r\n"
         "  ident               start Rs+Ls measurement\r\n"
         "  ident apply         apply latest result\r\n"
+        "  acog                anticogging query/start/finish/enable\r\n"
         " Storage/telemetry:\r\n"
         "  conf <write|erase>\r\n"
         "  log [0|1]\r\n",
@@ -589,6 +596,7 @@ static void cmd_execute(char *line)
                           (unsigned)m->safety.fault_code,
                           (unsigned)g_current_shunt_diag.fault_code);
         } else if ((strcmp(arg1, "clear") == 0) && (arg2 == 0)) {
+            current_shunt_reset_discontinuity();
             foc_motor_clear_fault(m);
             if (cur_axis == 0U) {
                 foc_app_vf_reset_commands();
@@ -1054,6 +1062,41 @@ static void cmd_execute(char *line)
             }
         } else {
             foc_cmd_print("err: obs [0|1]\r\n");
+        }
+
+    } else if (strcmp(cmd, "acog") == 0) {
+        /* 抗齿槽力矩补偿命令：
+         *   acog              - 查询状态、使能、样本数
+         *   acog start        - 清表并开启采样（需要在速度模式例如 20 RPM 运行 ≥3 圈）
+         *   acog finish       - 结算齿槽表并自动启用
+         *   acog enable [0|1] - 手动开关前馈补偿
+         */
+        if (arg1 == 0) {
+            const char *st_str = "IDLE";
+            if (g_m0_anticog.state == FOC_ACOG_CALIB) {
+                st_str = "CALIB";
+            } else if (g_m0_anticog.state == FOC_ACOG_READY) {
+                st_str = "READY";
+            }
+            foc_cmd_print("M0 acog state=%s enable=%u samples=%lu pts=%u\r\n",
+                          st_str,
+                          (unsigned)g_m0_anticog.enable,
+                          (unsigned long)g_m0_anticog.total_samples,
+                          (unsigned)FOC_ANTICOG_POINTS);
+        } else if (strcmp(arg1, "start") == 0) {
+            foc_anticog_calib_begin(&g_m0_anticog);
+            foc_cmd_print("M0 acog calib started. Run vel mode at 20-30 RPM for >=3 turns\r\n");
+        } else if (strcmp(arg1, "finish") == 0) {
+            if (foc_anticog_calib_finish(&g_m0_anticog) != 0U) {
+                foc_cmd_print("M0 acog calib SUCCESS, table ready & enabled\r\n");
+            } else {
+                foc_cmd_print("err: acog calib FAILED (empty bins, need more turns at low speed)\r\n");
+            }
+        } else if ((strcmp(arg1, "enable") == 0) && (has_val2 != 0U)) {
+            g_m0_anticog.enable = (val2 != 0.0f) ? 1U : 0U;
+            foc_cmd_print("M0 acog enable=%u\r\n", (unsigned)g_m0_anticog.enable);
+        } else {
+            foc_cmd_print("err: acog [start|finish|enable <0|1>]\r\n");
         }
 
     } else if (strcmp(cmd, "log") == 0) {

@@ -527,6 +527,16 @@ static void foc_motor_slow_loop(foc_motor_t *m)
         break;
     }
 
+    /* 抗齿槽标定采样（在注入前采样原始速度环/位置环 iq_ref，解耦方向） */
+    if ((m->anticog_sample_hook != 0) && (m->state == FOC_STATE_RUN)) {
+        m->anticog_sample_hook(m->theta_mech, dir * m->iq_ref);
+    }
+
+    /* 抗齿槽力矩前馈补偿（在限幅前注入） */
+    if (m->anticog_hook != 0) {
+        m->iq_ref += dir * m->anticog_hook(m->theta_mech);
+    }
+
     m->iq_ref = foc_clampf(m->iq_ref,
                            -m->params.max_current_a, m->params.max_current_a);
 
@@ -624,6 +634,8 @@ void foc_motor_init(foc_motor_t *m,
     m->traj.xf = 0.0f;
     m->traj_target_latch = 0.0f;
     m->test_hook = 0;
+    m->anticog_hook = 0;
+    m->anticog_sample_hook = 0;
     m->stall_cnt = 0U;
     /* 慢环节拍 = dt_fast·slow_div，把超时 ms 换算成慢环拍数 */
     m->stall_trip_ticks = (uint16_t)(((float)cfg->stall_timeout_ms * 1e-3f) /

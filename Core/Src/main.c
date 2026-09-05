@@ -528,7 +528,23 @@ static void MX_ADC1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN ADC1_Init 2 */
-
+  /** Configure Regular Channel for VBUS sensing (PA0 -> ADC1_IN1)
+   *  软件单次触发，长采样时间 92.5 cycles 适配 16.3kΩ 分压输出阻抗。
+   *  不开启连续转换，不使能 Regular 中断，完全避免干扰 TIM1 TRGO 触发的注入组电流采样。
+   */
+  {
+    ADC_ChannelConfTypeDef sConfigRegular = {0};
+    sConfigRegular.Channel = ADC_CHANNEL_1;
+    sConfigRegular.Rank = ADC_REGULAR_RANK_1;
+    sConfigRegular.SamplingTime = ADC_SAMPLETIME_92CYCLES_5;
+    sConfigRegular.SingleDiff = ADC_SINGLE_ENDED;
+    sConfigRegular.OffsetNumber = ADC_OFFSET_NONE;
+    sConfigRegular.Offset = 0;
+    if (HAL_ADC_ConfigChannel(&hadc1, &sConfigRegular) != HAL_OK)
+    {
+      Error_Handler();
+    }
+  }
   /* USER CODE END ADC1_Init 2 */
 
 }

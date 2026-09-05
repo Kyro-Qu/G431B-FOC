@@ -170,4 +170,11 @@ uint8_t current_shunt_resume(void);
  */
 void current_shunt_allow_transient(float grace_a);
 
+/*
+ * 清除连续采样拒绝与瞬态故障状态。
+ * 在用户发送 fault clear 或系统尝试清除 FAULT 时调用，
+ * 恢复采样链路的正常接收与连续性判据，消除误判导致的快环假死死锁。
+ */
+void current_shunt_reset_discontinuity(void);
+
 #endif /* CURRENT_SHUNT_H */

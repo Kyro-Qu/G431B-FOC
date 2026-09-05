@@ -682,9 +682,16 @@ uint8_t current_shunt_adc_irq(void)
 
                 if (rejected_consecutive >=
                     CURRENT_MAX_REJECTED_CONSECUTIVE) {
-                    current_shunt_fail(
-                        CURRENT_SHUNT_FAULT_CURRENT_DISCONTINUITY);
-                    return 0U;
+                    /* 连续拒绝达到阈值：锁存诊断状态码（cs_fault=23），
+                     * 但不再关闭定时器时钟与注入触发（不强行终止快环调度）。
+                     * 本周期继续沿用上一拍有效电流维持滤波与模型计算，
+                     * 控制层若判定严重过流/失控由系统保护安全停机，杜绝死锁假死。 */
+                    if (g_current_shunt_diag.fault_code ==
+                        (uint8_t)CURRENT_SHUNT_FAULT_NONE) {
+                        g_current_shunt_diag.fault_code =
+                            (uint8_t)CURRENT_SHUNT_FAULT_CURRENT_DISCONTINUITY;
+                        current_shunt_snapshot();
+                    }
                 }
                 return 1U;
             }
@@ -919,6 +926,22 @@ void current_shunt_allow_transient(float grace_a)
      * 立即结束用 0；float 单写原子，中断侧读取无撕裂。 */
     if (grace_a > transient_step_limit_a) {
         transient_step_limit_a = grace_a;
+    }
+}
+
+void current_shunt_reset_discontinuity(void)
+{
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    rejected_consecutive = 0U;
+    g_current_shunt_diag.rejected_consecutive = 0U;
+    if (g_current_shunt_diag.fault_code ==
+        (uint8_t)CURRENT_SHUNT_FAULT_CURRENT_DISCONTINUITY) {
+        g_current_shunt_diag.fault_code = (uint8_t)CURRENT_SHUNT_FAULT_NONE;
+    }
+    transient_step_limit_a = 0.0f;
+    if (primask == 0U) {
+        __enable_irq();
     }
 }
 
