@@ -1,0 +1,33 @@
+# Keil MDK-ARM build artifacts
+MDK-ARM/FOC_G431/*.o
+MDK-ARM/FOC_G431/*.crf
+MDK-ARM/FOC_G431/*.d
+MDK-ARM/FOC_G431/*.axf
+MDK-ARM/FOC_G431/*.hex
+MDK-ARM/FOC_G431/*.htm
+MDK-ARM/FOC_G431/*.map
+MDK-ARM/FOC_G431/*.lnp
+MDK-ARM/FOC_G431/*.dep
+MDK-ARM/FOC_G431/*.iex
+MDK-ARM/FOC_G431/*.txt
+MDK-ARM/FOC_G431/*.Bak
+MDK-ARM/*.txt
+MDK-ARM/*.lst
+MDK-ARM/*.bak
+
+# Keil User Settings
+*.uvoptx
+*.uvguix.*
+
+# Python caches and experiment logs
+__pycache__/
+*.py[cod]
+*.pkl
+*.npz
+*.npy
+*.png
+*.json
+
+# Temporary directories
+tmp/
+.claude/
