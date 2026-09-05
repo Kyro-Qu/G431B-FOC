@@ -123,6 +123,7 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
+extern FDCAN_HandleTypeDef hfdcan1;
 extern TIM_HandleTypeDef htim4;
 extern volatile system_fault_diag_t g_system_fault_diag;
 void system_fault_diag_boot_init(void);
@@ -155,6 +156,8 @@ void system_fault_capture(uint32_t exception);
 #define KEY_Pin GPIO_PIN_10
 #define KEY_GPIO_Port GPIOC
 #define KEY_EXTI_IRQn EXTI15_10_IRQn
+#define CAN_SHD_Pin GPIO_PIN_11
+#define CAN_SHD_GPIO_Port GPIOC
 #define ABZ_A_Pin GPIO_PIN_6
 #define ABZ_A_GPIO_Port GPIOB
 #define ABZ_B_Pin GPIO_PIN_7

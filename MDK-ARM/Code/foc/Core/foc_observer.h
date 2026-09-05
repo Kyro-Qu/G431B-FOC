@@ -50,6 +50,7 @@ typedef struct {
     float theta_e;         /* 估计电角度 [0, 2π) */
     float pll_theta;       /* PLL 跟踪角度 */
     float speed_e_rads;    /* 估计电角速度 rad/s（带符号） */
+    float theta_offset_rad; /* 角度偏移补偿（切换实验用） */
 } foc_observer_t;
 
 /** 初始化：填参数并复位状态。gamma<=0 时自动取 VESC 推荐值 */

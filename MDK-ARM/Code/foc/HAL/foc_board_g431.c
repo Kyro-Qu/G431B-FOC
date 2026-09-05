@@ -190,6 +190,7 @@ const foc_sensor_if_t g_board_m0_sensor = {
     .update            = abz_encoder_update,
     .angle_rad         = abz_encoder_angle_rad,
     .velocity_rpm      = abz_encoder_velocity_rpm,
+    .velocity_control_rpm = abz_encoder_pll_velocity_rpm,
     .force_zero        = abz_encoder_force_zero,
     .set_zero_on_index = abz_encoder_set_zero_on_index,
     .consume_index     = abz_encoder_consume_index,

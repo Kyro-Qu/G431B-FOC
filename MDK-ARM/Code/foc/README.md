@@ -13,7 +13,7 @@ Core/    纯算法层：禁止出现任何 HAL/寄存器代码
   foc_svm.c/.h     SVPWM：电压矢量 → 占空比（纯函数）
   foc_pid.c/.h     PID + 一阶低通
   foc_traj.c/.h    梯形轨迹规划（位置模式，ODrive trap_traj）
-  foc_motor.c/.h   电机轴对象 + 级联控制环（工程心脏）
+  foc_motor.c/.h   电机轴对象 + 电流/速度/位置控制环（工程心脏）
   foc_observer.c/.h【预留】无感磁链观测器 + PLL（VESC 式）
 
 Driver/  设备驱动层：可用 HAL，对上提供统一接口
@@ -24,12 +24,12 @@ Driver/  设备驱动层：可用 HAL，对上提供统一接口
 HAL/     板级绑定层：换板子只改这里
   foc_config.h      用户配置（轴数/频率/电机参数/校准/保护/存储）
   foc_board_g431    把本板硬件组装成接口表 + 看门狗/CPU统计 + 轴1虚拟绑定
-  foc_store         Flash 参数存储（串口 save / 上电自动加载）
+  foc_store         Flash 参数存储（串口 conf write / 上电自动加载）
 
 App/     应用层：业务逻辑，不写算法不碰寄存器
   foc_app        多轴对象、初始化时序、按键、任务调度
   foc_calib      上电校准状态机
-  foc_ident      Rs/Ls 自动测量（串口 id / id a）
+  foc_ident      Rs/Ls 自动测量（串口 ident / ident apply）
   foc_cmd        串口命令行（help 查看命令表）
   foc_telemetry  VOFA+ JustFloat 遥测（16 通道，见头文件通道表）
 ```

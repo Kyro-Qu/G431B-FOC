@@ -14,12 +14,53 @@
 #include "../Driver/current/current_shunt.h"
 #include "../Driver/encoder/abz_encoder.h"
 
+#include <math.h>
+
 foc_motor_t g_foc_motors[FOC_NUM_AXES];
 volatile uint8_t g_foc_state_diag = (uint8_t)FOC_STATE_IDLE;
 
-/* 开环 V/f 模式默认给定：0.3 V / 100 RPM，与旧版验证条件一致 */
-volatile float g_m0_openloop_vq = 0.30f;
-volatile float g_m0_openloop_rpm = 100.0f;
+/*
+ * V/F 上电必须是零给定。旧版默认 0.3 V / 100 RPM，且 RUN 时从这里反复
+ * 回写，导致单独执行 enable 也可能恢复上次给定并突然起转。
+ */
+/* V/F boost voltage. It is a tuning parameter, not a fixed output voltage. */
+volatile float g_m0_openloop_vq = FOC_M0_VF_BOOST_V;
+volatile float g_m0_openloop_rpm = 0.0f;
+volatile float g_m0_openloop_vq_applied = 0.0f;
+volatile float g_m0_openloop_rpm_applied = 0.0f;
+volatile float g_m0_vf_slope_v_per_rpm = FOC_M0_VF_SLOPE_V_PER_RPM;
+volatile float g_m0_vf_vq_target = 0.0f;
+
+static uint32_t vf_ramp_tick_ms = 0U;
+static uint8_t vf_ramp_active = 0U;
+
+static float app_approach(float value, float target, float max_step)
+{
+    if (target > value + max_step) {
+        return value + max_step;
+    }
+    if (target < value - max_step) {
+        return value - max_step;
+    }
+    return target;
+}
+
+void foc_app_vf_reset_commands(void)
+{
+    /* Keep boost/slope tuning across stop; clear every motion/output state. */
+    g_m0_openloop_rpm = 0.0f;
+    g_m0_openloop_vq_applied = 0.0f;
+    g_m0_openloop_rpm_applied = 0.0f;
+    g_m0_vf_vq_target = 0.0f;
+    vf_ramp_active = 0U;
+    vf_ramp_tick_ms = HAL_GetTick();
+
+    /* 不在校准/辨识期间覆盖测试状态机拥有的开环电压。 */
+    if (g_foc_motors[0].state != FOC_STATE_CALIB) {
+        foc_motor_openloop_spin(&g_foc_motors[0], 0.0f, 0.0f, 0.0f);
+        g_foc_motors[0].vel_ref_rpm = 0.0f;
+    }
+}
 
 /* ---------------- 轴 0 配置 ---------------- */
 
@@ -39,7 +80,15 @@ static const foc_ctrl_cfg_t m0_cfg = {
     .vel_ki            = FOC_M0_VEL_KI,
     .vel_ramp_rpm_s    = FOC_M0_VEL_RAMP_RPM_S,
     .vel_lpf_tf        = FOC_M0_VEL_LPF_TF,
+    .vel_friction_a    = FOC_M0_VEL_FRICTION_A,
+    .vel_start_a       = FOC_M0_VEL_START_A,
+    .vel_start_rpm     = FOC_M0_VEL_START_RPM,
+    .vel_track_kp      = FOC_M0_VEL_TRACK_KP,
+    .vel_track_limit_rad = FOC_M0_VEL_TRACK_LIMIT,
+    .vel_track_rpm     = FOC_M0_VEL_TRACK_RPM,
     .pos_kp            = FOC_M0_POS_KP,
+    .pos_ki            = FOC_M0_POS_KI,
+    .pos_vel_kp        = FOC_M0_POS_VEL_KP,
     .pos_vel_limit_rpm = FOC_M0_POS_VEL_LIMIT,
     .traj_enable       = FOC_M0_TRAJ_ENABLE,
     .traj_accel_rpm_s  = FOC_M0_TRAJ_ACC_RPM_S,
@@ -68,7 +117,15 @@ static const foc_ctrl_cfg_t m1_cfg = {
     .vel_ki            = 0.02f,
     .vel_ramp_rpm_s    = 2000.0f,
     .vel_lpf_tf        = 0.005f,
-    .pos_kp            = 60.0f,
+    .vel_friction_a    = 0.0f,
+    .vel_start_a       = 0.0f,
+    .vel_start_rpm     = 30.0f,
+    .vel_track_kp      = 0.0f,
+    .vel_track_limit_rad = 0.4f,
+    .vel_track_rpm     = 100.0f,
+    .pos_kp            = 1.0f,
+    .pos_ki            = 1.25f,
+    .pos_vel_kp        = 0.005f,
     .pos_vel_limit_rpm = 1000.0f,
     .traj_enable       = 1U,
     .traj_accel_rpm_s  = 4000.0f,
@@ -82,16 +139,45 @@ static const foc_ctrl_cfg_t m1_cfg = {
 
 /* ---------------- API ---------------- */
 
+/* Reject NaN, infinity and values outside the supported control range. */
+static uint8_t app_float_sane(float value, float lo, float hi)
+{
+    return ((value == value) && (value >= lo) && (value <= hi)) ? 1U : 0U;
+}
+
 /* 上电参数自检：非法参数直接 FAULT，好过带病闭环 */
 static uint8_t app_params_sane(const foc_motor_params_t *p,
                                const foc_ctrl_cfg_t *c)
 {
-    if ((p->pole_pairs <= 0.0f) || (p->rs_ohm <= 0.0f) ||
-        (p->ls_henry <= 0.0f) || (p->max_current_a <= 0.0f) ||
+    if (!app_float_sane(p->pole_pairs, 0.01f, 100.0f) ||
+        !app_float_sane(p->rs_ohm, 0.000001f, 100.0f) ||
+        !app_float_sane(p->ls_henry, 0.000000001f, 1.0f) ||
+        !app_float_sane(p->max_current_a, 0.001f, 1000.0f) ||
+        !app_float_sane(p->hard_current_a, 0.001f, 1000.0f) ||
         (p->hard_current_a < p->max_current_a) ||
-        (p->max_rpm <= 0.0f) || (c->current_bw_rads <= 0.0f) ||
-        (c->vel_lpf_tf < 0.0f) || (c->pos_vel_limit_rpm <= 0.0f) ||
+        !app_float_sane(p->max_rpm, 1.0f, 100000.0f) ||
+        !app_float_sane(c->current_bw_rads,
+                         FOC_CURRENT_BW_MIN_RADS,
+                         FOC_CURRENT_BW_MAX_RADS) ||
+        !app_float_sane(c->vel_kp, 0.0f, 10000.0f) ||
+        !app_float_sane(c->vel_ki, 0.0f, 10000.0f) ||
+        !app_float_sane(c->vel_ramp_rpm_s, 0.0f, 1000000.0f) ||
+        !app_float_sane(c->vel_lpf_tf, 0.0f, 10.0f) ||
+        !app_float_sane(c->vel_friction_a, 0.0f, 1000.0f) ||
+        !app_float_sane(c->vel_start_a, 0.0f, 1000.0f) ||
+        (c->vel_start_a < c->vel_friction_a) ||
+        !app_float_sane(c->vel_start_rpm, 0.1f, 100000.0f) ||
+        !app_float_sane(c->vel_track_kp, 0.0f, 1000.0f) ||
+        !app_float_sane(c->vel_track_limit_rad, 0.001f, 1000.0f) ||
+        !app_float_sane(c->vel_track_rpm, 0.1f, 100000.0f) ||
+        !app_float_sane(c->pos_kp, 0.0f, 100000.0f) ||
+        !app_float_sane(c->pos_ki, 0.0f, 10000.0f) ||
+        !app_float_sane(c->pos_vel_kp, 0.0f, 10000.0f) ||
+        !app_float_sane(c->pos_vel_limit_rpm, 0.1f, 100000.0f) ||
         ((c->traj_enable != 0U) && (c->traj_accel_rpm_s <= 0.0f))) {
+        return 0U;
+    }
+    if (!app_float_sane(c->traj_accel_rpm_s, 0.0f, 1000000.0f)) {
         return 0U;
     }
     return 1U;
@@ -116,8 +202,12 @@ void foc_app_init(void)
                    &m0_p, &m0_c,
                    FOC_DT_FAST, FOC_SLOW_DIV);
 
+    /* direction 是板级相序/编码器方向约定，不是运行时辨识量。即使尚无
+     * Flash 校准，也让 V/F 的正 RPM 与编码器机械正方向保持一致。 */
+    g_foc_motors[0].calib.direction = (int8_t)FOC_CALIB_DIRECTION;
+
     /* 存储的校准偏移：标记 from_store，等 Z 重建零点后即可闭环
-     * （按键/`c` 触发的校准会走快速索引搜索） */
+     * （按键/`calib` 触发的校准会走快速索引搜索） */
     if (store_st == FOC_STORE_LOADED_CALIB) {
         g_foc_motors[0].calib.from_store = 1U;
         g_foc_motors[0].calib.direction = stored_dir;
@@ -199,6 +289,9 @@ void foc_app_task(void)
 {
     foc_motor_t *m0 = &g_foc_motors[0];
 
+    /* 无感观测器更新已移入快环中断（角度必须逐拍更新，主循环频率
+     * 跟不上换相需求——切换实验失败根因 2026-09-03） */
+
 #if FOC_WATCHDOG_ENABLE
     foc_board_watchdog_kick();
 #endif
@@ -217,11 +310,95 @@ void foc_app_task(void)
         foc_motor_fault(m0, FOC_FAULT_CURRENT_SENSE);
     }
 
-    /* 开环 V/f 模式：把调试给定推入电机对象（校准接管时除外） */
+    /* 采样链 DISCONTINUITY 自动恢复（2026-09-03，用户授权）：cs=23
+     * 停机后快环死（遥测停、CLI 假死），原本必须断电重启。延迟 2s
+     * 自动重启采样链并清 FAULT——偶发单路假偏差从"停机"降级为
+     * "瞬态扰动"。init 只建链路，ready 要靠 calibrate 置位，缺了
+     * 它恢复循环每拍重新锁 fault=1（2026-09-04 切换实验定位）。 */
+    {
+        static uint32_t recov_last_ms = 0xFFFFFFFFU;
+        if ((m0->state == FOC_STATE_FAULT) &&
+            (m0->safety.fault_code == (uint8_t)FOC_FAULT_CURRENT_SENSE) &&
+            (current_shunt_is_ready() == 0U)) {
+            uint32_t now = HAL_GetTick();
+            if ((recov_last_ms == 0xFFFFFFFFU) ||
+                ((now - recov_last_ms) > 10000U)) {
+                recov_last_ms = now;
+                if ((current_shunt_init() != 0U) &&
+                    (current_shunt_calibrate(500U) != 0U)) {
+                    foc_motor_clear_fault(m0);
+                    foc_cmd_print("sampling chain auto-recovered, re-calib");
+                }
+            }
+        }
+    }
+
+    /*
+     * 开环 V/F：目标先经过电压和机械转速斜坡，再提交给快环。
+     * HAL tick 使斜坡不依赖主循环执行速度；一次最多补20ms，避免调试打印
+     * 或短暂阻塞后产生大阶跃。
+     */
     if ((foc_calib_is_active() == 0U) &&
         (m0->state == FOC_STATE_RUN) &&
         (m0->mode == FOC_MODE_OPENLOOP_VF)) {
-        foc_motor_openloop_spin(m0, g_m0_openloop_rpm, 0.0f, g_m0_openloop_vq);
+        uint32_t now = HAL_GetTick();
+        uint32_t elapsed_ms;
+        float dt;
+
+        if (vf_ramp_active == 0U) {
+            g_m0_openloop_vq_applied = 0.0f;
+            g_m0_openloop_rpm_applied = 0.0f;
+            vf_ramp_tick_ms = now;
+            vf_ramp_active = 1U;
+        }
+
+        elapsed_ms = now - vf_ramp_tick_ms;
+        if (elapsed_ms != 0U) {
+            if (elapsed_ms > 20U) {
+                elapsed_ms = 20U;
+            }
+            vf_ramp_tick_ms = now;
+            dt = (float)elapsed_ms * 0.001f;
+            g_m0_openloop_rpm_applied = app_approach(
+                g_m0_openloop_rpm_applied, g_m0_openloop_rpm,
+                FOC_M0_VF_RPM_RAMP_RPM_S * dt);
+
+            /* Real V/F law: Vq = boost + slope * |rpm|.  At zero speed the
+             * voltage is removed, so enable alone cannot heat or shake the
+             * motor.  Guard globals as they may also be edited in Watch. */
+            if (fabsf(g_m0_openloop_rpm_applied) < FOC_M0_VF_ZERO_RPM) {
+                g_m0_vf_vq_target = 0.0f;
+            } else {
+                float boost = g_m0_openloop_vq;
+                float slope = g_m0_vf_slope_v_per_rpm;
+                float v_max = m0->drv->u_dc * 0.5773503f;
+
+                if (!((boost >= 0.0f) && (boost <= v_max))) {
+                    boost = 0.0f;
+                }
+                if (!((slope >= 0.0f) && (slope <= 0.01f))) {
+                    slope = 0.0f;
+                }
+                g_m0_vf_vq_target = boost +
+                    slope * fabsf(g_m0_openloop_rpm_applied);
+                if (g_m0_vf_vq_target > v_max) {
+                    g_m0_vf_vq_target = v_max;
+                }
+            }
+            g_m0_openloop_vq_applied = app_approach(
+                g_m0_openloop_vq_applied, g_m0_vf_vq_target,
+                FOC_M0_VF_VQ_RAMP_V_S * dt);
+        }
+
+        foc_motor_openloop_spin(m0, g_m0_openloop_rpm_applied, 0.0f,
+                                g_m0_openloop_vq_applied);
+        m0->vel_ref_rpm = g_m0_openloop_rpm_applied;
+    } else if (m0->state != FOC_STATE_CALIB) {
+        g_m0_openloop_vq_applied = 0.0f;
+        g_m0_openloop_rpm_applied = 0.0f;
+        g_m0_vf_vq_target = 0.0f;
+        vf_ramp_active = 0U;
+        vf_ramp_tick_ms = HAL_GetTick();
     }
 
     g_foc_state_diag = (uint8_t)m0->state;
@@ -245,6 +422,7 @@ void foc_app_on_key(void)
 
     case FOC_STATE_RUN:
         foc_motor_disarm(m0);
+        foc_app_vf_reset_commands();
         system_power_checkpoint(SYSTEM_CHECKPOINT_RUN_STOP,
                                 (uint32_t)g_foc_pwm_stage,
                                 (uint32_t)g_foc_calib_state,

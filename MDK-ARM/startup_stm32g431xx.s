@@ -32,7 +32,11 @@
 ;   <o> Stack Size (in Bytes) <0x0-0xFFFFFFFF:8>
 ; </h>
 
-Stack_Size		EQU     0x400
+; 0x1000 = 4KB：status 等 CLI 命令的 vsprintf 输出链 + HAL ADC/OPAMP
+; 校准调用链（current_shunt_init 主循环重入）栈深远超 1KB；1024B 栈
+; 会溢出踩掉相邻 .bss（g_current_shunt_diag 尾部=0xFF 的来源）。
+; G431 32KB RAM，ZI 已用 25.8KB，加 3KB 余量充足（2026-09-04）。
+Stack_Size		EQU     0x1000
 
                 AREA    STACK, NOINIT, READWRITE, ALIGN=3
 Stack_Mem       SPACE   Stack_Size

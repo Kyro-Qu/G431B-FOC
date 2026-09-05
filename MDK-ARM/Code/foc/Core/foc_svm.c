@@ -61,7 +61,13 @@ void foc_svm_calc(const ab_t *v_ab, float u_dc, foc_svm_t *out)
     v_common = -0.5f * (v_max + v_min);
     inv_udc = 1.0f / u_dc;
 
-    out->duty_a = foc_clampf(0.5f + ((v.a + v_common) * inv_udc), 0.0f, 1.0f);
-    out->duty_b = foc_clampf(0.5f + ((v.b + v_common) * inv_udc), 0.0f, 1.0f);
-    out->duty_c = foc_clampf(0.5f + ((v.c + v_common) * inv_udc), 0.0f, 1.0f);
+    /*
+     * 占空比安全限幅（对齐 ST MCSDK MAX_MODULATION_100_PER_CENT）：
+     * 最大占空比限制在 94.0%，保留足够的下桥导通时间（> 1.8us = 300 tick），
+     * 保证三电阻采样在任何转速下都拥有纯净的公共低边窗口，
+     * 彻底消除高调制比时切换运放内部通道和采样点镜像产生的虚假过流毛刺。
+     */
+    out->duty_a = foc_clampf(0.5f + ((v.a + v_common) * inv_udc), 0.060f, 0.940f);
+    out->duty_b = foc_clampf(0.5f + ((v.b + v_common) * inv_udc), 0.060f, 0.940f);
+    out->duty_c = foc_clampf(0.5f + ((v.c + v_common) * inv_udc), 0.060f, 0.940f);
 }

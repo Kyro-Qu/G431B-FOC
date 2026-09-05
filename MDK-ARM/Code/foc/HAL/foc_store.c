@@ -13,7 +13,9 @@
 #define STORE_ADDR   0x0801F800UL
 #define STORE_PAGE   63U
 #define STORE_MAGIC  0x464F4353UL  /* "FOCS" */
-#define STORE_VER    1U
+#define STORE_VER    7U  /* v7：极对数 6→7（12N14P 实测），旧块 params 内
+                             * 的 pole_pairs=6 会在 load 时覆盖新编译默认，
+                             * 必须使旧存储失效重建成编译默认 */
 
 /* 参数块。改字段必须递增 STORE_VER（旧块会被当作无效丢弃） */
 typedef struct {
@@ -28,7 +30,15 @@ typedef struct {
     float vel_ki;
     float vel_ramp_rpm_s;
     float vel_lpf_tf;
+    float vel_friction_a;
+    float vel_start_a;
+    float vel_start_rpm;
+    float vel_track_kp;
+    float vel_track_limit_rad;
+    float vel_track_rpm;
     float pos_kp;
+    float pos_ki;
+    float pos_vel_kp;
     float pos_vel_limit_rpm;
     float traj_accel_rpm_s;
     uint8_t traj_enable;
@@ -80,12 +90,22 @@ foc_store_status_t foc_store_load(foc_motor_params_t *params,
     }
 
     *params = s->params;
+    params->hard_current_a = FOC_M0_HARD_CURRENT_A;
+    params->max_rpm        = FOC_M0_MAX_RPM;
     cfg->current_bw_rads   = s->current_bw_rads;
     cfg->vel_kp            = s->vel_kp;
     cfg->vel_ki            = s->vel_ki;
     cfg->vel_ramp_rpm_s    = s->vel_ramp_rpm_s;
     cfg->vel_lpf_tf        = s->vel_lpf_tf;
+    cfg->vel_friction_a    = s->vel_friction_a;
+    cfg->vel_start_a       = s->vel_start_a;
+    cfg->vel_start_rpm     = s->vel_start_rpm;
+    cfg->vel_track_kp      = s->vel_track_kp;
+    cfg->vel_track_limit_rad = s->vel_track_limit_rad;
+    cfg->vel_track_rpm     = s->vel_track_rpm;
     cfg->pos_kp            = s->pos_kp;
+    cfg->pos_ki            = s->pos_ki;
+    cfg->pos_vel_kp        = s->pos_vel_kp;
     cfg->pos_vel_limit_rpm = s->pos_vel_limit_rpm;
     cfg->traj_accel_rpm_s  = s->traj_accel_rpm_s;
     cfg->traj_enable       = s->traj_enable;
@@ -164,7 +184,15 @@ uint8_t foc_store_save(const foc_motor_t *m)
     img.blob.vel_ki            = m->pid_vel.ki;
     img.blob.vel_ramp_rpm_s    = m->cfg.vel_ramp_rpm_s;
     img.blob.vel_lpf_tf        = m->cfg.vel_lpf_tf;
+    img.blob.vel_friction_a    = m->cfg.vel_friction_a;
+    img.blob.vel_start_a       = m->cfg.vel_start_a;
+    img.blob.vel_start_rpm     = m->cfg.vel_start_rpm;
+    img.blob.vel_track_kp      = m->cfg.vel_track_kp;
+    img.blob.vel_track_limit_rad = m->cfg.vel_track_limit_rad;
+    img.blob.vel_track_rpm     = m->cfg.vel_track_rpm;
     img.blob.pos_kp            = m->pid_pos.kp;
+    img.blob.pos_ki            = m->pid_pos.ki;
+    img.blob.pos_vel_kp        = m->cfg.pos_vel_kp;
     img.blob.pos_vel_limit_rpm = m->cfg.pos_vel_limit_rpm;
     img.blob.traj_accel_rpm_s  = m->cfg.traj_accel_rpm_s;
     img.blob.traj_enable       = m->cfg.traj_enable;

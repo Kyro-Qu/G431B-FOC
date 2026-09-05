@@ -1,6 +1,6 @@
 /**
  * @file    foc_motor.h
- * @brief   电机轴对象 foc_motor_t 与级联控制环（纯算法层）
+ * @brief   电机轴对象 foc_motor_t 与电流/速度/位置控制环（纯算法层）
  *
  * ============================ 设计说明 ============================
  *
@@ -37,6 +37,7 @@
 #include "foc_pid.h"
 #include "foc_svm.h"
 #include "foc_traj.h"
+#include "foc_observer.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -62,6 +63,7 @@ typedef struct foc_motor {
     /* ---- 配置 ---- */
     foc_motor_params_t params;
     foc_ctrl_cfg_t cfg;
+    foc_runtime_t runtime;
     float dt_fast;                 /* 快环周期 s（= 1/PWM频率） */
     uint16_t slow_div;             /* 慢环分频比（16k/16=1kHz） */
 
@@ -77,14 +79,22 @@ typedef struct foc_motor {
     volatile float target;         /* 语义随 mode：V / A / RPM / rad */
     dq_t v_openloop;               /* 开环&校准直接电压命令 */
     float vel_ref_rpm;             /* 斜坡后的速度给定 */
-    float iq_ref;                  /* q 轴电流给定（慢环输出） */
+    float vel_track_pos_rad;       /* 速度模式低速位置轨迹参考 */
+    float vel_start_boost_a;       /* 仅起步阶段生效的脱槽附加电流 */
+    int8_t vel_start_sign;          /* 本次起步方向：-1/0/+1 */
+    uint8_t vel_start_active;       /* 已脱槽后清零，防止稳态持续前馈 */
+    uint16_t vel_start_release_cnt; /* 同向转动确认计数，过滤测速毛刺 */
+    float id_ref;                  /* d 轴弱磁电流给定（快环输出，<=0） */
+    float iq_ref;                  /* q 轴转矩电流给定（慢环输出） */
+    float fw_integral;             /* 弱磁电压闭环反馈积分 */
 
     /* ---- 反馈 ---- */
     float theta_e;                 /* 当前使用的电角度 rad [0,2π) */
     float theta_mech;              /* 机械角 rad [0,2π) */
     float position_rad;            /* 连续多圈机械位置 rad */
-    float velocity_rpm;            /* 机械转速（传感器滤波后） */
-    float velocity_filt_rpm;       /* 慢环再滤波后的速度反馈 */
+    float velocity_rpm;            /* 诊断速度：编码器滑动拟合结果 */
+    float velocity_observer_rpm;   /* 低延迟速度：角度 PLL 观察器结果 */
+    float velocity_filt_rpm;       /* 中值+二阶低通后的控制速度反馈 */
     abc_t i_abc;                   /* 三相电流 A */
     dq_t i_dq;                     /* 实测 dq 电流 A */
     dq_t i_dq_filt;                /* 低通后的 dq 电流（遥测/观察用） */
@@ -98,9 +108,22 @@ typedef struct foc_motor {
     foc_pid_t pid_iq;
     foc_pid_t pid_vel;
     foc_pid_t pid_pos;
-    foc_lpf_t lpf_vel;             /* 速度反馈低通（慢环） */
+    foc_speed_filter_t vel_filter;     /* 高速路径：可配置截止频率 */
+    foc_speed_filter_t vel_filter_low; /* 低速路径：固定 15 Hz，兼顾平滑与相位裕量 */
     foc_lpf_t lpf_id;
     foc_lpf_t lpf_iq;
+    /* 电流环反馈陷波器：剔除 2.5kHz 采样混叠假影（诊断 2026-09-02） */
+    foc_notch_t notch_id;
+    foc_notch_t notch_iq;
+
+    /* ---- 无感观测器（在线对比/后续切换用，2026-09-03） ---- */
+    foc_observer_t observer;
+    ab_t v_ab_last;                /* 上一拍施加的 αβ 电压（观测器输入） */
+    uint8_t obs_enabled;           /* 观测器使能（在线对比开关） */
+    uint32_t obs_switch_ms;        /* 角度源切换时刻（HAL tick，豁免窗用） */
+    float obs_blend;               /* 切换渐变权重 0=编码器 1=观测器
+                                    * （离散跳变会 16° 相位阶跃 → BOR 掉电） */
+    uint8_t obs_blending;          /* 渐变进行中标志 */
 
     /* ---- 位置模式轨迹规划 ---- */
     foc_traj_t traj;
@@ -140,6 +163,18 @@ void foc_motor_init(foc_motor_t *m,
 /** 快环入口：在该轴电流采样完成中断（16 kHz）中调用 */
 void foc_motor_fast_loop(foc_motor_t *m);
 
+/**
+ * 在线设置速度反馈滤波截止频率。hz=0 完全直通；设置后以当前速度重置
+ * 滤波状态，避免参数切换给速度 PI 制造假阶跃。
+ */
+void foc_motor_set_velocity_filter_hz(foc_motor_t *m, float hz);
+
+/** 沿用旧 `vel lpf` 的时间常数接口；fc=1/(2*pi*tf)，tf=0 为直通。 */
+void foc_motor_set_velocity_filter_tf(foc_motor_t *m, float tf);
+
+/** 查询当前二阶低通截止频率；直通时返回 0。 */
+float foc_motor_get_velocity_filter_hz(const foc_motor_t *m);
+
 /* ======================== 命令接口 ======================== */
 
 /** 使能输出进入 RUN（IDLE→RUN）。闭环模式要求已校准，否则返回 0 并锁存故障 */
@@ -167,6 +202,7 @@ void foc_motor_set_angle_source(foc_motor_t *m, foc_angle_source_t src);
 void foc_motor_openloop_hold(foc_motor_t *m, float theta_e, float vd, float vq);
 
 /** 以指定机械转速开环旋转 + 固定 vd/vq */
+/** 开环旋转；rpm 使用编码器机械正方向，内部按 calib.direction 换算电角速度。 */
 void foc_motor_openloop_spin(foc_motor_t *m, float rpm, float vd, float vq);
 
 /* ======================== 故障处理 ======================== */
@@ -176,6 +212,17 @@ void foc_motor_fault(foc_motor_t *m, foc_fault_t fault);
 
 /** 清除故障回到 IDLE（只有显式调用才能离开 FAULT） */
 void foc_motor_clear_fault(foc_motor_t *m);
+
+/* ---- 16kHz 故障黑匣子（纯 RAM 诊断） ---- */
+/** 冻结/恢复快环逐拍记录（fault 自动冻结，clear_fault 自动恢复） */
+void foc_motor_blackbox_freeze(void);
+void foc_motor_blackbox_resume(void);
+/** 导出环形缓冲：故障前 256 拍（16ms）的 iu/iw/theta_e/vq */
+void foc_motor_blackbox_dump(float *out_u, float *out_w,
+                             float *out_th, float *out_vq,
+                             float *out_duty);
+/** 1 = 已冻结（故障数据有效） */
+uint8_t foc_motor_blackbox_active(void);
 
 /* ======================== 辅助 ======================== */
 

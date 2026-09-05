@@ -1,13 +1,13 @@
 /**
  * @file    foc_ident.h
- * @brief   电机参数自动测量（Rs / Ls），串口命令 `id` 触发
+ * @brief   电机参数自动测量（Rs / Ls），串口命令 `ident` 触发
  *
  * 来源：ODrive 的 measure_phase_resistance / measure_phase_inductance，
  * VESC (foc_measure_res/ind) 与 MESC 也用同样思路。
  *
  * 为什么值得要？电流环增益自整定（Kp=Ls·ω，Ki=Rs·ω）依赖准确的
  * Rs/Ls，而多数用户拿到电机根本查不到这两个参数。测一次填进
- * foc_config.h（或 `id a` 直接应用），闭环就稳了。
+ * foc_config.h（或 `ident apply` 直接应用），闭环就稳了。
  *
  * 测量原理：
  *   Rs：固定电角度（θe=0）给 d 轴电压，积分控制器缓慢升压直到
@@ -21,8 +21,8 @@
  * 立即断 PWM；测量完成或失败都回到 IDLE 并清理测试钩子。
  *
  * 使用（串口）：
- *   id      开始测量（需 IDLE 且电流采样就绪）
- *   id a    把上次测量结果应用到本轴参数并重整定电流环（RAM 内，
+ *   ident       开始测量（需 IDLE 且电流采样就绪）
+ *   ident apply  把上次测量结果应用到本轴参数并重整定电流环（RAM 内，
  *           重启失效；长期使用请写入 foc_config.h）
  */
 

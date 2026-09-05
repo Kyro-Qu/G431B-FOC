@@ -170,7 +170,7 @@ void foc_ident_task(void)
                       (unsigned)m->safety.fault_code);
         return;
     }
-    /* 用户中途 e 0：安静退出 */
+    /* 用户中途 disable：安静退出 */
     if (m->state != FOC_STATE_CALIB) {
         ident_cleanup(m);
         ident_set_state(FOC_IDENT_FAIL);
@@ -275,7 +275,7 @@ void foc_ident_task(void)
             ident_cleanup(m);
             ident_set_state(FOC_IDENT_DONE);
             foc_cmd_print("ident OK: Rs=%.4f ohm  Ls=%.2f uH  (I=%.2fA)\r\n"
-                          "apply with 'id a', then 'save' to persist\r\n",
+                          "apply with 'ident apply', then 'conf write'\r\n",
                           (double)ident_result.rs_ohm,
                           (double)(ident_result.ls_henry * 1e6f),
                           (double)ident_result.test_current_a);

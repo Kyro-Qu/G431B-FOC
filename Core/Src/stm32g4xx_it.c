@@ -25,6 +25,7 @@
 #include "current_shunt.h"
 #include "foc_app.h"
 #include "stm32g4xx_ll_adc.h"
+#include "stm32g4xx_ll_tim.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -60,6 +61,7 @@
 /* External variables --------------------------------------------------------*/
 extern ADC_HandleTypeDef hadc1;
 extern ADC_HandleTypeDef hadc2;
+extern FDCAN_HandleTypeDef hfdcan1;
 extern TIM_HandleTypeDef htim1;
 extern DMA_HandleTypeDef hdma_usart2_tx;
 extern DMA_HandleTypeDef hdma_usart2_rx;
@@ -235,11 +237,18 @@ void DMA1_Channel2_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles FDCAN1 interrupt line 0.
+  */
+void FDCAN1_IT0_IRQHandler(void)
+{
+  HAL_FDCAN_IRQHandler(&hfdcan1);
+}
+
+/**
   * @brief This function handles ADC1 and ADC2 global interrupt.
   */
 void ADC1_2_IRQHandler(void)
 {
-  /* USER CODE BEGIN ADC1_2_IRQn 0 */
   if (LL_ADC_IsActiveFlag_JEOS(ADC2) != 0U)
   {
     LL_ADC_ClearFlag_JEOS(ADC2);
@@ -258,12 +267,6 @@ void ADC1_2_IRQHandler(void)
   {
     LL_ADC_ClearFlag_JQOVF(ADC2);
   }
-  /* USER CODE END ADC1_2_IRQn 0 */
-  HAL_ADC_IRQHandler(&hadc1);
-  HAL_ADC_IRQHandler(&hadc2);
-  /* USER CODE BEGIN ADC1_2_IRQn 1 */
-
-  /* USER CODE END ADC1_2_IRQn 1 */
 }
 
 /**
@@ -271,13 +274,7 @@ void ADC1_2_IRQHandler(void)
   */
 void EXTI9_5_IRQHandler(void)
 {
-  /* USER CODE BEGIN EXTI9_5_IRQn 0 */
-
-  /* USER CODE END EXTI9_5_IRQn 0 */
   HAL_GPIO_EXTI_IRQHandler(ABZ_Z_Pin);
-  /* USER CODE BEGIN EXTI9_5_IRQn 1 */
-
-  /* USER CODE END EXTI9_5_IRQn 1 */
 }
 
 /**
@@ -285,13 +282,11 @@ void EXTI9_5_IRQHandler(void)
   */
 void TIM1_UP_TIM16_IRQHandler(void)
 {
-  /* USER CODE BEGIN TIM1_UP_TIM16_IRQn 0 */
-
-  /* USER CODE END TIM1_UP_TIM16_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim1);
-  /* USER CODE BEGIN TIM1_UP_TIM16_IRQn 1 */
-
-  /* USER CODE END TIM1_UP_TIM16_IRQn 1 */
+  if (LL_TIM_IsActiveFlag_UPDATE(TIM1) != 0U)
+  {
+    LL_TIM_ClearFlag_UPDATE(TIM1);
+    current_shunt_tim_update_irq();
+  }
 }
 
 /**

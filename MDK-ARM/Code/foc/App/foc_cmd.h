@@ -6,21 +6,23 @@
  * 每行一条命令，以 \r 或 \n 结束，全部小写，参数用空格分隔。
  *
  * 命令一览（详见 help 输出 / Docs/04_上手指南.md）：
- *   help          帮助
- *   s             打印全部轴状态
- *   a <n>         选择当前轴（默认 0）
- *   e <0|1>       停止 / 使能当前轴
- *   c             启动校准
- *   f             清除故障
- *   m <vf|iq|vel|pos>  切换控制模式
- *   t <val>       设目标（随模式：V / A / RPM / rad）
- *   vq <v>        开环 q 轴电压
- *   rpm <v>       开环转速
- *   cb <rad/s>    电流环带宽重整定
- *   vp <v> vi <v> 速度环 Kp / Ki
- *   pp <v>        位置环 Kp
- *   lim <A>       软件电流限制
- *   log <0|1>     VOFA 遥测流开关
+ *   help / version / status
+ *   motor [n]                    查看/选择当前电机
+ *   enable / disable             使能/停止
+ *   fault [clear]                查看/清除故障
+ *   calib [full]                 快速/完整校准
+ *   mode [vf|iq|vel|pos]         查看/切换控制模式
+ *   target <value>               iq:A、vel:RPM、pos:rad
+ *   vq <V> / vf slope <V/RPM>    VF 零速提升/斜率
+ *   rpm <RPM>                    VF 开环速度
+ *   limit [A]                    查看/设置软件电流限制
+ *   current [bw <rad/s>]         电流环带宽
+ *   tune [angle_delay|fw|pll ...] 高速实验参数（仅 RAM）
+ *   vel [kp|ki <value>]          速度环 PI
+ *   pos [kp <value>]             位置环 P
+ *   ident / ident apply          启动测量/应用最近的 Rs+Ls
+ *   conf <write|erase>           保存/擦除 Flash 配置
+ *   log [0|1]                    VOFA 遥测流状态/开关
  */
 
 #ifndef FOC_CMD_H

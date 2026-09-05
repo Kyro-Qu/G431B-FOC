@@ -33,9 +33,16 @@ extern foc_motor_t g_foc_motors[FOC_NUM_AXES];
 /** 轴 0 状态镜像（Keil Watch / 断电诊断记录用） */
 extern volatile uint8_t g_foc_state_diag;
 
-/** 开环 V/f 模式的调试给定（Keil Watch 可实时修改） */
+/** 开环 V/F 的目标与斜坡后实际给定（编码器机械正方向）。 */
 extern volatile float g_m0_openloop_vq;
 extern volatile float g_m0_openloop_rpm;
+extern volatile float g_m0_openloop_vq_applied;
+extern volatile float g_m0_openloop_rpm_applied;
+extern volatile float g_m0_vf_slope_v_per_rpm;
+extern volatile float g_m0_vf_vq_target;
+
+/** 清除轴0 V/F 目标和斜坡状态；停机、切模式和故障恢复时调用。 */
+void foc_app_vf_reset_commands(void);
 
 /** 上电初始化：电机对象 → 编码器 → 电流采样 → PWM 定时器 → 零偏校准 → 通信 */
 void foc_app_init(void);

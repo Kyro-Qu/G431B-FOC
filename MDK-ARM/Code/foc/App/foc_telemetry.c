@@ -69,7 +69,8 @@ void foc_telemetry_isr_tick(void)
     }
 
     frame.ch[0] = m0->theta_e;
-    frame.ch[1] = m0->theta_mech;
+    frame.ch[1] = m0->i_dq.q;      /* 诊断改造：原始 Iq（低通前），
+                                    * 2380RPM 爆发先出现在此通道 */
     frame.ch[2] = m0->velocity_rpm;
     frame.ch[3] = m0->vel_ref_rpm;
     frame.ch[4] = m0->i_dq_filt.d;
@@ -80,14 +81,32 @@ void foc_telemetry_isr_tick(void)
     frame.ch[9] = m0->i_abc.a;
     frame.ch[10] = m0->i_abc.b;
     frame.ch[11] = m0->i_abc.c;
-    frame.ch[12] = ((float)m0->state * 10.0f) + (float)foc_calib_get_state();
+    frame.ch[12] = m0->svm.duty_a; /* 诊断改造：A 相占空比 0..1，
+                                    * 检测调制比瞬间跳变 */
     frame.ch[13] = ((float)m0->safety.fault_code * 100.0f) +
                    (float)g_current_shunt_diag.fault_code;
-    frame.ch[14] = m0->position_rad;
+    /* 诊断改造：无感观测器角度差（theta_obs - theta_e，wrap 到 ±π）。
+     * 若高速段差值稳定 → 无感切换可行。 */
+    {
+        /* 用 PLL 平滑角对比：theta_e(atan2) 原始值含纹波抖动，
+         * pll_theta 是锁相后的平滑角，对应真实切换可用性。 */
+        float d = m0->observer.pll_theta - m0->theta_e;
+        while (d > 3.14159265f) { d -= 6.2831853f; }
+        while (d < -3.14159265f) { d += 6.2831853f; }
+        frame.ch[14] = d;
+    }
 #if FOC_NUM_AXES >= 2
     frame.ch[15] = g_foc_motors[1].theta_e;
 #else
-    frame.ch[15] = m0->target;
+    /*
+     * Speed-estimator diagnosis for the single-axis build:
+     *   ch2  = encoder driver's adaptive least-squares speed
+     *   ch15 = the speed actually used by the outer loops
+     *          (angle-PLL speed after median3 + adaptive 5/30 Hz BW2)
+     * ch3 already carries the speed reference, so both estimator layers can
+     * be compared with the command without changing the 16-channel frame.
+     */
+    frame.ch[15] = m0->velocity_filt_rpm;
 #endif
 
     (void)HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&frame, sizeof(frame));

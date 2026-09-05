@@ -55,18 +55,19 @@ typedef enum {
     FOC_STATE_FAULT = 3   /* 故障：锁定，需显式清除 */
 } foc_state_t;
 
-/** 控制模式（级联环节逐级叠加，参考 SimpleFOC MotionControlType） */
+/** 控制模式（参考 SimpleFOC MotionControlType） */
 typedef enum {
     FOC_MODE_OPENLOOP_VF = 0, /* 开环 V/f：虚拟角度 + 电压给定，无需任何反馈 */
     FOC_MODE_TORQUE      = 1, /* 力矩模式：Iq 闭环（需要电流采样 + 角度） */
     FOC_MODE_VELOCITY    = 2, /* 速度模式：速度环 → Iq 电流环 */
-    FOC_MODE_POSITION    = 3  /* 位置模式：位置环 → 速度环 → Iq 电流环 */
+    FOC_MODE_POSITION    = 3  /* 位置模式：位置 PI + 速度阻尼 → Iq 电流环 */
 } foc_mode_t;
 
 /** Park/反 Park 使用的电角度来源 */
 typedef enum {
     FOC_ANGLE_OPEN_LOOP = 0,          /* 软件推进的虚拟角度 */
-    FOC_ANGLE_ENCODER_CALIBRATED = 1  /* 编码器机械角 × 极对数 + 校准偏移 */
+    FOC_ANGLE_ENCODER_CALIBRATED = 1, /* 编码器机械角 × 极对数 + 校准偏移 */
+    FOC_ANGLE_OBSERVER = 2            /* 无感磁链观测器角度（高速用） */
 } foc_angle_source_t;
 
 /** 轴级故障码（统一入口，参考 VESC mc_fault_code） */
@@ -109,13 +110,15 @@ typedef struct {
 
 /**
  * 位置传感器接口（一轴一份）。
- * 前三个是必选项；带 index/Z 脉冲的增量编码器再实现后三个，
+ * update/angle_rad/velocity_rpm 是必选项；velocity_control_rpm 可选，用于
+ * 提供低延迟观察器速度。带 index/Z 脉冲的增量编码器再实现后三个，
  * 供上电校准状态机使用（无 Z 相的传感器可置 NULL）。
  */
 typedef struct {
     void  (*update)(void);            /* 快环中调用，刷新内部计数 */
     float (*angle_rad)(void);         /* 机械角 [0, 2π) */
-    float (*velocity_rpm)(void);      /* 机械转速 RPM（已滤波） */
+    float (*velocity_rpm)(void);      /* 诊断机械转速 RPM（可较强拟合） */
+    float (*velocity_control_rpm)(void); /* 可选：低延迟控制速度 RPM */
 
     /* ---- 可选：增量编码器 index（Z 脉冲）支持 ---- */
     void    (*force_zero)(void);              /* 立即把当前位置设为零点 */
@@ -145,9 +148,17 @@ typedef struct {
     float vel_kp;             /* A / RPM */
     float vel_ki;             /* A / (RPM·s) */
     float vel_ramp_rpm_s;     /* 速度目标斜坡 RPM/s，0 = 不限 */
-    float vel_lpf_tf;         /* 速度反馈低通时间常数 s（0 = 直通） */
-    /* 位置环 P（输入 rad 误差，输出速度给定 RPM） */
-    float pos_kp;             /* RPM / rad */
+    float vel_lpf_tf;         /* 速度 median3+BW2 等效时间常数；fc=1/(2πTf) */
+    float vel_friction_a;     /* 转动后的库仑摩擦前馈 A */
+    float vel_start_a;        /* 静止脱离齿槽所需的起步前馈 A */
+    float vel_start_rpm;      /* 起步前馈平滑退出的转速 RPM */
+    float vel_track_kp;       /* 低速位置轨迹跟踪增益 A/rad */
+    float vel_track_limit_rad;/* 低速轨迹允许的最大位置滞后 rad */
+    float vel_track_rpm;      /* 全量跟踪区上限；两倍该值处退出 */
+    /* 位置伺服：位置 PI 直接输出 Iq，速度误差提供阻尼/前馈 */
+    float pos_kp;             /* A / rad */
+    float pos_ki;             /* A / (rad·s) */
+    float pos_vel_kp;         /* A / RPM */
     float pos_vel_limit_rpm;  /* 位置模式允许的最大速度给定 */
     /* 位置模式梯形轨迹规划（ODrive trap_traj 方案） */
     uint8_t traj_enable;      /* 1 = 目标位置经轨迹规划器平滑 */
@@ -164,16 +175,29 @@ typedef struct {
     uint16_t stall_timeout_ms;/* 电流饱和且不转持续超时 → FOC_FAULT_STALL */
 } foc_ctrl_cfg_t;
 
+/** 高速实验参数（仅 RAM，禁止由 Flash 配置持久化） */
+typedef struct {
+    float angle_delay_cycles;      /* 编码器角度预测的快环周期数 */
+    uint8_t fieldweak_enable;      /* 1 = 启用自动弱磁 */
+    float fieldweak_enter_rpm;     /* 进入弱磁的速度门槛 */
+    float fieldweak_voltage_ratio; /* 弱磁目标电压 / 线性区上限 */
+    float fieldweak_gain;          /* 弱磁积分增益 */
+    float fieldweak_id_min_a;      /* 最小 Id，负值表示去磁电流 */
+} foc_runtime_t;
+
 /* ========== 安全诊断（一轴一份，Keil Watch 友好） ========== */
 
 typedef struct {
     volatile float peak_current_a;          /* 本周期三相最大 |I| */
     volatile float max_observed_current_a;  /* 上电以来的最大 |I| */
+    volatile float soft_current_a;          /* 滤波后的 sqrt(Id^2+Iq^2) */
     volatile float current_limit_a;         /* 当前生效的软限制 */
     volatile float hard_current_limit_a;    /* 当前生效的硬限制 */
     volatile float trip_current_u_a;        /* 触发故障时的三相电流快照 */
     volatile float trip_current_v_a;
     volatile float trip_current_w_a;
+    volatile float trip_soft_current_a;     /* 跳闸时的软件限流判据 */
+    volatile uint8_t trip_was_hard;         /* 1=单拍硬限，0=软件限流 */
     volatile uint16_t consecutive_over_limit; /* 连续超软限计数 */
     volatile uint8_t fault_code;              /* foc_fault_t */
 } foc_safety_diag_t;

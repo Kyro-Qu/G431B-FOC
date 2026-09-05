@@ -4,10 +4,10 @@
  *
  * 这一层是"硬件说明书"：
  *   轴 0（真实硬件）：
- *     PWM    → TIM1 三相互补（CH1/PC13N, CH2/PA12N, CH3/PB15N），
- *              中心对齐，CH4 生成 ADC 触发（OC4REF → TRGO）
- *     电流   → OPAMP1/2/3 PGA×16 + ADC1/ADC2 注入组（current_shunt 驱动）
- *     传感器 → TIM4 编码器模式 ABZ（abz_encoder 驱动）
+ *     PWM    -> TIM1 三相互补（CH1/PC13N, CH2/PA12N, CH3/PB15N），
+ *              中心对齐，CH4 生成 ADC 触发（OC4REF -> TRGO）
+ *     电流   -> OPAMP1/2/3 PGAx16 + ADC1/ADC2 注入组（current_shunt 驱动）
+ *     传感器 -> TIM4 编码器模式 ABZ（abz_encoder 驱动）
  *   轴 1（虚拟轴，FOC_NUM_AXES >= 2 时存在）：
  *     所有硬件函数为空实现，仅用于演示/验证双轴调度框架。
  *     接入真实第二套功率级时，把 m1_* 函数换成对应外设操作即可，
@@ -51,7 +51,7 @@ void foc_board_init(void);
 
 /* ---- 系统级稳定性设施 ---- */
 
-/** 快环 CPU 占用统计（DWT 周期计数，'s' 命令显示） */
+/** 快环 CPU 占用统计（DWT 周期计数，status 命令显示） */
 typedef struct {
     volatile uint32_t last_cycles;  /* 最近一拍快环执行周期数 */
     volatile uint32_t max_cycles;   /* 上电以来最大值 */

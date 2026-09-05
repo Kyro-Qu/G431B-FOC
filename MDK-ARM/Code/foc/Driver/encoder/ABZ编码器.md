@@ -1,309 +1,303 @@
-# ABZ 增量式编码器驱动设计文档
+# AS5047P / ABZ 编码器、角度 PLL 与自适应测速
 
-> **历史文档说明**：本文写于旧版单轴架构时期，原理讲解（采样时序、
-> 半量程法、窗口规划等）仍然有效，但文中出现的旧 API 名
-> （如 foc_set_pwm / foc_tim_irq / foc_vf_set_voltage / foc_feedback /
-> abz_encoder_init 旧签名等）已在对象化重构中被接口表取代。
-> 现行接口以 foc_types.h 与《Docs/03_代码走读.md》为准。
+本文对应当前工程中的：
 
-## 硬件配置
+- `abz_encoder.c/.h`
+- `foc_board_g431.c` 中的 `g_board_m0_sensor`
+- `foc_motor.c` 中的控制测速滤波和速度/位置环
 
-### 编码器参数
-
-| 参数 | 宏/符号 | 说明 |
-| ---- | ---- | ---- |
-| 编码器线数 | — | 512 线（可更换） |
-| 每转脉冲数 | `ABZ_ENCODER_CPR` | 线数 × 4（4 倍频） |
-| 定时器句柄 | `ABZ_ENCODER_TIM_HANDLE` | 默认 htim4 |
-| 定时器计数范围 | `ABZ_TIMER_COUNTER_RANGE` | ARR + 1（16 位 = 65536） |
-| 回绕判断阈值 | `ABZ_TIMER_HALF_RANGE` | COUNTER_RANGE / 2 |
-| 采样频率 | `PWM_FREQ_HZ` | FOC 控制频率（Hz） |
-
-### 定时器配置
-
-- 模式：编码器模式 TI1 和 TI2（双边沿 4 倍频）
-- ARR = `ABZ_TIMER_COUNTER_RANGE - 1`（16 位满值，自由运行）
-- 预分频 = 0
-- 输入滤波 = 15（抗干扰）
-
-**ARR 设为最大值的原因**：无论编码器线数多少，定时器都能自由计数，不需要针对特定编码器调整 ARR。通用性最强。
-
-### Z 相配置
-
-- Z 相信号特征：平时低电平，转到原点时产生短暂高电平脉冲
-- GPIO 配置：下拉 + 上升沿触发外部中断
-- 中断动作：仅做清零校准，不做复杂运算
-
-## 核心算法思想
-
-### 设计前提
-
-**笃定电机在采样间隔内不可能转半圈以上。**
-
-证明：
-
-- 采样间隔 = 1 / `PWM_FREQ_HZ`
-- 半圈对应 `ABZ_ENCODER_CPR / 2` 个脉冲
-- 要在一个采样间隔内转半圈，所需转速 = 0.5 × `PWM_FREQ_HZ` × 60 RPM
-- 以 16kHz 为例：0.5 × 16000 × 60 = 480,000 RPM，物理上不可能
-
-只要满足这个前提，半量程判断法就是绝对可靠的。
-
-### 编码器计数
-
-- A 超前 B → CNT 自动 +1（正转）
-- B 超前 A → CNT 自动 -1（反转）
-- CNT 到达 `ABZ_TIMER_COUNTER_RANGE - 1` → 自动回绕到 0
-- CNT 到达 0 → 自动回绕到 `ABZ_TIMER_COUNTER_RANGE - 1`
-
-### 定时器回绕处理
-
-CNT 范围 [0, `ABZ_TIMER_COUNTER_RANGE - 1`]，用 `ABZ_TIMER_HALF_RANGE` 作为阈值判断回绕方向：
+当前编码器按 AS5047P 的 ABI 增量输出使用。现阶段不依赖 AS5047P 的
+SPI 寄存器配置；用手转动机械轴一整圈，TIM4 实测累计 **2048 count**，
+因此工程采用：
 
 ```c
-int32_t delta = (int32_t)CNT_now - (int32_t)CNT_last;
-
-if (delta > ABZ_TIMER_HALF_RANGE)        // 反转跨越 0 边界
-    delta -= ABZ_TIMER_COUNTER_RANGE;     // 修正为负增量
-else if (delta < -ABZ_TIMER_HALF_RANGE)   // 正转跨越 ARR 边界
-    delta += ABZ_TIMER_COUNTER_RANGE;     // 修正为正增量
+#define FOC_M0_ENCODER_CPR 2048U
 ```
 
-**原理**：正常运转时 |delta| 远小于 `ABZ_TIMER_HALF_RANGE`。如果 |delta| 超过半量程，说明发生了边界回绕，需要修正方向。
+## 1. 硬件与数据流
 
-### 单圈位置维护
+```text
+AS5047P A/B -> PB6/PB7 -> TIM4 encoder mode -> CNT
+AS5047P I   -> PB8     -> EXTI
+                                      |
+ADC2 JEOS / 16 kHz FOC -> abz_encoder_update()
+                                      |
+          +---------------------------+------------------------+
+          |                           |                        |
+   angle_rad()                 velocity_rpm()          Z/index event
+   PLL 单圈机械角              自适应拟合速度           校准状态机
+```
 
-软件维护 `position_cnt`，范围 [0, `ABZ_ENCODER_CPR`)：
+TIM4 使用 TI1/TI2 编码器模式、16 位自由运行计数器和最大输入数字滤波。
+软件每 62.5 µs 读取一次 CNT。TIM4 的 0/65535 回绕由半量程法修正，
+不要求 CNT 每转一圈清零。
+
+## 2. 对外接口
+
+| API | 输入/输出 | 调用位置 |
+| --- | --- | --- |
+| `abz_encoder_init()` | 清状态、清 TIM4 CNT、启动 A/B 解码 | 板级初始化 |
+| `abz_encoder_deinit()` | 停止 TIM4 编码器通道 | 板级停用 |
+| `abz_encoder_update()` | 读取 CNT，更新角度、连续计数和速度 | 16 kHz 电流快环 |
+| `abz_encoder_angle_rad()` | 单圈机械角 `[0, 2π)` | FOC 机械角反馈 |
+| `abz_encoder_velocity_rpm()` | 自适应滑动拟合速度，单位 RPM | 诊断、VOFA `ch2` |
+| `abz_encoder_pll_velocity_rpm()` | 16 kHz 角度 PLL 的低延迟速度，单位 RPM | 控制测速输入 |
+| `abz_encoder_on_index()` | 在 PB8 EXTI 中锁存 Z 事件和硬件计数 | GPIO 中断 |
+| `abz_encoder_force_zero()` | 请求下一次快环把当前位置设为零 | 校准 |
+| `abz_encoder_set_zero_on_index()` | 控制 Z 到来时是否重映射 CNT | 只在找 Z 时开启 |
+| `abz_encoder_consume_index()` | 一次性取走 Z 事件及位置 | 校准状态机 |
+| `abz_encoder_is_calibrated()` | 查询是否见过 Z 或执行过强制零点 | 诊断 |
+
+上层通过 `foc_sensor_if_t` 接口表调用这些函数，不直接访问 TIM4。
+
+## 3. 位置处理
+
+### 3.1 16 位 CNT 回绕
 
 ```c
-position_cnt = (position_cnt + delta) % ABZ_ENCODER_CPR;
-if (position_cnt < 0) position_cnt += ABZ_ENCODER_CPR;
+delta = (int32_t)cnt_now - (int32_t)cnt_last;
+
+if (delta > 32768)
+    delta -= 65536;
+else if (delta < -32768)
+    delta += 65536;
 ```
 
-### 角度和速度计算
+16 kHz 采样下，电机不可能在一拍内转过半个定时器量程，因此这个判断
+是无歧义的。额外的 `ABZ_MAX_DELTA=CPR/4` 会丢弃不可能的单拍跳变。
 
-```c
-angle_rad    = position_cnt * ABZ_RAD_PER_CNT     // = position_cnt × (2π / ABZ_ENCODER_CPR)
-velocity_rpm = delta * ABZ_RPM_COEFF              // = delta × (60 × PWM_FREQ_HZ / ABZ_ENCODER_CPR)
+### 3.2 单圈角与连续计数
+
+- `position_cnt`：取模到 `[0, 2048)`，用于单圈机械角；
+- `total_count`：`int64_t` 连续累计，用于测速，跨越多圈不丢精度；
+- `angle_rad = position_cnt × 2π / 2048`。
+
+最小二乘运算先在 `int64_t` 中消去大数公共项，再转成 `float`，避免长时间
+运行后把单个编码器计数吞掉。
+
+## 4. 为什么原来的单次差分会出现 ±3.66 RPM
+
+2048 CPR、8 ms 计数窗中，一个计数对应：
+
+```text
+60 / (2048 × 0.008) = 3.662 RPM
 ```
 
-- `ABZ_RAD_PER_CNT` = 2π / `ABZ_ENCODER_CPR`
-- `ABZ_RPM_COEFF` = 60 × `PWM_FREQ_HZ` / `ABZ_ENCODER_CPR`
+AS5047P 静止在 ABI 码边界附近时，A/B 可能因角度噪声在相邻计数间来回。
+旧算法把每个 ±1 count 直接换算成约 ±3.66 RPM；偶发 ±2 count 就显示
+约 ±7.32 RPM。转轴固定后，各机械位置的脉冲幅度相同而密度不同，也符合
+“码边界抖动”，不是电机真的以该速度转动。
 
-delta 就是在一个采样周期内真正的脉冲增量，直接乘系数就是速度。
-position_cnt 就是转子的单圈绝对位置，直接乘系数就是机械角度。
+只增加普通一阶低通会让脉冲变小，但不能区分“往返假脉冲”和“单方向真实
+运动”，同时还会给速度环增加相位延迟。因此当前采用位置拟合测速，并用
+二阶 PLL 生成连续换相角。
 
-## Z 相校准策略
+## 5. 当前测速与角度算法
 
-### 为什么不用 Z 相做 ARR 限制？
+### 5.1 静止：64 ms 端点与拟合速度联合判定
 
-因为 ARR = `ABZ_TIMER_COUNTER_RANGE - 1`，CNT 要增加 `ABZ_TIMER_COUNTER_RANGE` 次才会回绕，
-而一圈只有 `ABZ_ENCODER_CPR` 个计数。CNT 不是每转一圈回零，
-而是每 `ABZ_TIMER_COUNTER_RANGE / ABZ_ENCODER_CPR` 圈才回绕一次。
+连续位置以 1 kHz 写入 64 点历史。满足以下两个条件时发布 0 RPM：
 
-### 正确做法：Z 相每圈清零
-
-电机每转一圈，Z 相来一个脉冲，触发中断将 CNT 清零。这样可以防止累积误差。
-
-1. 系统上电时不知道转子位置
-2. 电机启动后，第一次捕获到 Z 相中断时，将 CNT 强制写 0
-3. 标记"已校准"
-4. 后续 Z 相中断可用于丢步检测：如果 Z 触发时 position 不接近 0，说明丢步
-
-### 采样间隔内不可能出现多次 Z 中断
-
-- 控制周期间隔 = 1 / `PWM_FREQ_HZ`
-- 即使极端转速下，一个采样间隔内电机转动角度远小于一圈
-- 结论：不可能在一个采样间隔内出现多次 Z 中断
-
-## 代码架构
-
-### 初始化
-
-```c
-abz_encoder_init(&foc_feedback.angle_rad, &foc_feedback.velocity_rpm);
-// 绑定 foc_feedback 字段 → 清零 CNT → 启动编码器模式
+```text
+|position_now - position_64ms_ago| <= 4 count
+|velocity_LS64| <= 2 RPM
 ```
 
-放在 `foc_app.c` 的 `foc_init()` 里，在 `foc_timer_init()` 之前：
+固定边界的 ±1/±2 count 往返不会形成净位移；10 RPM 在 64 ms 内约移动
+22 count，不会被静止门限误杀。低于约 2 RPM 的运动被有意视为静止。
 
-```c
-void foc_init(void)
-{
-    foc_motor_init();
-    foc_contr_init(foc_motor_info.pole_pairs, 10.0f);
-    foc_vf_set_voltage(2.0f);
+### 5.2 为什么没有继续使用短计数 M/T
 
-#if FOC_LOG_MONITOR
-    foc_log_monitor_init();
-#endif
+曾实装“累计净移动 4 count 后用精确时间换算 RPM”的 M/T 支路。它在理想
+方波上响应很快，但本板 AS5047P ABI 偶尔会出现间隔很近的边沿簇。只测
+4 count 会把边沿簇放大成固定的离散速度，实测出现：
 
-    /* 编码器初始化，绑定到 foc_feedback，必须在定时器启动前 */
-    abz_encoder_init(&foc_feedback.angle_rad, &foc_feedback.velocity_rpm);
+- 真实 20 RPM 时短时跳到 `312.5 RPM`；
+- 真实 50 RPM 时出现 `-56.8～312.5 RPM`；
+- 速度 PI 把这些离散值变成真实的正反转矩脉动。
 
-    app_state.state = FOC_STATE_IDLE;
-    foc_timer_init();  // TIM1 中断启动后会调用 abz_encoder_update()
-}
+因此当前控制固件不再发布 M/T 结果。低速统一使用重叠位置拟合，静止仍由
+64 ms 净位移门限判定。这是实机数据作出的选择，不是理论上否定所有 M/T。
+
+### 5.3 中高速：滑动最小二乘
+
+中高速使用等间隔位置样本拟合斜率：
+
+| 稳定速度范围 | 使用结果 |
+| --- | --- |
+| 静止～60 RPM | 64 ms 拟合/静止判定 |
+| 60～120 RPM | 64 ms 与 32 ms 线性混合 |
+| 120～800 RPM | 32 ms 拟合 |
+| 800～1200 RPM | 32 ms 与 16 ms 线性混合 |
+| ≥1200 RPM | 16 ms 拟合 |
+
+窗口选择依据稳定的 64 ms 速度，而不是噪声更大的短窗速度。
+
+### 5.4 16 kHz 机械角 PLL
+
+FOC 换相不直接使用量化的 `position_cnt × rad_per_count`，而是使用二阶
+位置/速度跟踪器：
+
+```text
+error = wrap(raw_count - pll_position)
+pll_velocity += Ki × error × dt
+pll_position += (pll_velocity + Kp × error) × dt
 ```
 
-### Z 相外部中断回调
+当前带宽为 `200 rad/s`，`Kp=400`、`Ki=40000`，更新频率 16 kHz。
+二阶 PLL 对恒速斜坡没有普通一阶角度低通那种固定相位滞后，同时能减小
+AS5047P 计数边界跳动直接进入 `θe = dir × 7 × θm + offset` 的程度。
 
-```c
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-    if (GPIO_Pin == ABZ_Z_Pin) {
-        abz_encoder_set_zero();
-        // 将 CNT 强制写 0，重置位置，置位校准标志
-    }
-}
+### 5.5 为什么必须用 O(1) 滑动更新
+
+最初版本在每个 1 ms 时刻遍历 64/32/16 个点做浮点拟合。平均工作量不大，
+但计算全部集中在一拍，实机校准时中断峰值接近 95%，导致下一次 ADC
+注入转换未及时消费并触发 `cs_fault=22`。
+
+现版本为每个窗口维护：
+
+```text
+sum_y  = Σ y[i]
+sum_iy = Σ i × y[i]
 ```
 
-### FOC PWM 中断中周期更新
+加入一个新样本时只进行固定次数的加减：
 
-```c
-abz_encoder_update();
-// 1. 读取当前 CNT
-// 2. delta = CNT_now - CNT_last（含回绕处理）
-// 3. position_cnt += delta，取模到 [0, ABZ_ENCODER_CPR)
-// 4. angle = position_cnt × ABZ_RAD_PER_CNT
-// 5. velocity_raw = delta × ABZ_RPM_COEFF
-// 6. velocity = 一阶 IIR 低通滤波（ABZ_VELOCITY_LPF_ALPHA）
+```text
+sum_iy' = sum_iy - (sum_y - oldest) + (N - 1) × newest
+sum_y'  = sum_y - oldest + newest
 ```
 
-### 电角度计算（上层使用）
+最小二乘斜率为：
 
-```c
-float theta_e = motor_angle * pole_pairs;
-theta_e = limit_angle_rad(theta_e);  // 限制到 [0, 2π)
+```text
+slope = [2Σ(i·y) - (N-1)Σy] × 6 / [N(N²-1)]
 ```
 
-## 文件清单
+所以每次更新都是 O(1)，不会在电流中断中形成长计算突发。
 
-| 文件 | 说明 |
-| ---- | ---- |
-| `abz_encoder.h` | 接口定义、配置宏、数据结构 |
-| `abz_encoder.c` | 驱动实现 |
-| `ABZ编码器.md` | 本设计文档 |
+## 6. 诊断测速、控制测速与 VOFA 通道
 
-## 速度估算方法
+v0.3.10 将“便于判断真实平均速度”和“低延迟闭环反馈”分成两条路径，
+并在控制路径中按转速自适应选择滤波带宽：
 
-### 问题：单次差分法的量化噪声
+```text
+位置计数 -> 64/32/16 ms 滑动拟合 ----------------------> ch2 诊断速度
+         -> 16 kHz 角度 PLL -> median3 -> 5 Hz BW2 --+
+                                      -> 30 Hz BW2 --+-> 50~100RPM混合
+                                                       -> ch15/速度位置环
 
-直接用 `velocity = delta × ABZ_RPM_COEFF` 计算速度时，低速下会出现严重的量化噪声。
-
-原因：CPR = `ABZ_ENCODER_CPR`，采样频率 = `PWM_FREQ_HZ`。低速时每个采样周期内 delta 只有 0 或 ±1，
-导致速度输出在 0 和 ±(`ABZ_RPM_COEFF`) 之间跳变，呈现脉冲序列。
-
-例如 468 RPM 时：
-- 每秒脉冲数 = 468/60 × 2048 ≈ 16000
-- 每个 16kHz 周期平均 1 个脉冲
-- delta 序列：`[-1, -1, 0, -1, -1, 0, ...]`
-- 速度输出：`[-468, -468, 0, -468, -468, 0, ...]`
-
-角度不受影响，因为 position_cnt 是累积量（积分），量化误差被平滑。
-
-### 当前方案：一阶 IIR 低通滤波 ✓（已实现）
-
-```c
-// y[n] = y[n-1] + α × (x[n] - y[n-1])
-float velocity_raw = (float)delta * ABZ_RPM_COEFF;
-enc.velocity_filtered += ABZ_VELOCITY_LPF_ALPHA * (velocity_raw - enc.velocity_filtered);
-*enc.velocity_rpm = enc.velocity_filtered;
+ch2  = velocity_rpm           滑动拟合诊断速度
+ch15 = velocity_filt_rpm      外环实际使用的反馈
+ch3  = vel_ref_rpm            速度给定/位置轨迹速度
 ```
 
-配置宏：`ABZ_VELOCITY_LPF_ALPHA`，默认 0.05
+`ch15` 的滤波器在 1 kHz 慢环更新。三点中值先删除孤立尖峰，之后并行运行
+5 Hz 与默认30 Hz两条二阶 Butterworth：≤50 RPM取5 Hz，≥100 RPM取30 Hz，
+中间连续混合。`vel filter` 在线修改的是高速路径：
 
-α 与截止频率的关系：`α ≈ 2π × fc / fs`
-
-| α | 截止频率 fc | 效果 |
-| ---- | ---- | ---- |
-| 0.01 | ~25 Hz | 非常平滑，延迟大（适合显示/监控） |
-| 0.05 | ~127 Hz | 平滑且响应尚可（速度环 1~2kHz 够用） |
-| 0.1 | ~255 Hz | 轻度滤波，响应快（高动态场景） |
-| 0.2 | ~510 Hz | 几乎不滤 |
-
-优点：
-- 实现极简，一行乘加运算
-- 可调参数只有一个 α
-- 16kHz 运行无额外开销
-- 角度输出不受影响（滤波只作用于速度）
-
-缺点：
-- 有相位延迟（α 越小延迟越大）
-- 不能同时兼顾平滑度和响应速度
-
-适用场景：速度环反馈、一般 FOC 应用。
-
-### 备选方案对比
-
-#### 方案 B：降采样累积（Decimation）
-
-思路：不是每个 16kHz 周期都算速度，而是每 N 个周期累积 delta 总和再算一次。
-
-```c
-// 伪代码
-static int32_t sum_delta = 0;
-static uint16_t dec_cnt = 0;
-
-sum_delta += delta;
-if (++dec_cnt >= N) {
-    velocity = sum_delta * (ABZ_RPM_COEFF / N);
-    sum_delta = 0;
-    dec_cnt = 0;
-}
+```text
+vel filter 30        当前默认高速路径
+vel filter 20        高速更平滑，但必须重新检查相位裕量
+vel filter 0         高速路径直通，仅用于诊断
+vel lpf 0.005305     兼容以时间常数设置；等效约 30 Hz
 ```
 
-| N | 速度更新频率 | 低速分辨率提升 |
-| ---- | ---- | ---- |
-| 8 | 2 kHz | 8× |
-| 16 | 1 kHz | 16× |
-| 32 | 500 Hz | 32× |
+`vel filter` 的时间参数仍保存到原来的 `vel_lpf_tf` Flash 字段，因此没有
+改变存储结构，也不会使已保存的编码器校准失效。改变截止频率后两条滤波
+状态都会用当前 PLL 速度重置，避免在线改参产生人为阶跃。
 
-优点：分辨率随 N 线性提升，无相位延迟
-缺点：速度更新频率降低，不适合高带宽速度环
+旧版把低通叠加在已经带有 16～64 ms 窗口延迟的拟合速度上，降低截止频率
+反而会把机械闭环激成低频振荡。当前控制路径改用低延迟 PLL 速度后再滤波，
+避免重复叠加长延迟。`ch2` 和 `ch15` 因来源不同，不应期望逐点相等。
 
-#### 方案 C：M/T 法（测频测周结合）
+单轴调速时推荐同时画 `ch2`、`ch15`、`ch3`。当前目标值不再占用
+`ch15`，其他模式的目标可通过 `status` 查看。
 
-- 高速时用 M 法（固定时间内数脉冲数）
-- 低速时用 T 法（测两个脉冲之间的时间间隔）
-- 中间速度用 M/T 法结合
+## 7. 2026-08-01 实机结果
 
-优点：全速域精度最好
-缺点：实现复杂，可能需要额外定时器资源，切换逻辑容易出 bug
+### 7.1 v0.3.2 无控制滤波基线
 
-#### 方案 D：PLL 速度观测器（锁相环跟踪）
+条件：14.4 V、AS5047P ABI=2048 CPR、7 极对、`Kp=0.0015`、
+`Ki=0.002`、`vel lpf=0`、`vel track=0`、电流限值 1 A。
 
-```
-角度误差 = θ_measured - θ_estimated
-    → PI 控制器 → 输出 = 估计速度 ω_est
-    → 积分器 → 输出 = 估计角度 θ_est → 反馈
-```
+| 工况 | 测速层 | 均值 | 标准差 | 范围 |
+| --- | --- | ---: | ---: | ---: |
+| 停机 | ch2/ch15 | 0.00 | 0.00 | 0～0 RPM |
+| 20 RPM，闭环 vel | ch15 | 20.34 | 41.64 | -1.13～181.45 RPM |
+| 50 RPM，闭环 vel | ch15 | 46.37 | 53.22 | -6.70～211.99 RPM |
+| 100 RPM，闭环 vel | ch15 | 100.27 | 29.84 | 5.82～183.43 RPM |
+| 300 RPM，闭环 vel | ch15 | 299.82 | 3.88 | 290.05～309.65 RPM |
+| 500 RPM，闭环 vel | ch15 | 501.01 | 5.12 | 484.5～514.5 RPM |
+| 1000 RPM，闭环 vel | ch15 | 1000.40 | 6.79 | 987.0～1017.9 RPM |
+| 2000 RPM，闭环 vel | ch15 | 2000.98 | 10.86 | 1980.9～2027.0 RPM |
+| 20 RPM，开环 V/F | ch15 | -19.94 | 4.56 | -31.50～-10.18 RPM |
+| 50 RPM，开环 V/F | ch15 | -49.96 | 1.38 | -53.60～-46.88 RPM |
+| 100 RPM，开环 V/F | ch15 | -100.04 | 1.13 | -102.11～-97.47 RPM |
 
-优点：
-- 速度和角度同时平滑
-- 可输出插值角度（比编码器分辨率更细）
-- 可扩展为二阶观测器输出加速度
-- 工业伺服驱动器标准做法
+这张表是修改测速控制路径以前的基线。300 RPM 以上闭环稳定且均值准确。
+100 RPM 不同起始齿槽位置的重复测试中，
+标准差约为 21.57～29.84 RPM；20/50 RPM 仍表现为“停住—突然跨过齿槽”。
+同一硬件使用 V/F
+同步角度时 20/50/100 RPM 明显更平稳，说明剩余量主要是低速齿槽、静摩擦
+以及编码器角度换相下的转矩脉动，而不是 VOFA 绘图或单纯的速度数值噪声。
+在完成更高分辨率角度接入或一圈角度误差 LUT 校准前，不应宣称 20/50 RPM
+闭环已经丝滑；低速无负载演示可使用 `mode vf`。
 
-缺点：
-- 需要调 PI 参数（Kp、Ki），带宽和阻尼比要匹配电机动态
-- PI 参数不对会振荡或跟不上
-- 代码量和调试复杂度远高于 IIR
+### 7.2 v0.3.3 控制滤波与 PI 重新匹配
 
-适用场景：高性能伺服、需要角度插值、需要加速度前馈、无感切换。
+条件：`vel filter=15 Hz`、`Kp=0.0010`、`Ki=0.0015`、
+`vel track=0`、电流限值 1 A。单独从静止启动到 100 RPM 的测试结果为：
 
-### 方案选型总结
+| 工况 | `ch15` 均值 | 标准差 | 范围 | 结论 |
+| --- | ---: | ---: | ---: | --- |
+| 100 RPM，15 Hz | 100.6 | 14.0 | 61～134 RPM | 比 v0.3.2 基线明显减少毛刺 |
+| 300 RPM，12 Hz 对照 | 301.6 | 5.1 | — | 稳定 |
+| 500 RPM，12 Hz 对照 | 499.5 | 5.6 | — | 稳定 |
+| 1000 RPM，12 Hz 对照 | 998.0 | 6.7 | — | 稳定 |
 
-| 方案 | 复杂度 | 平滑度 | 响应速度 | 适用阶段 |
-| ---- | ---- | ---- | ---- | ---- |
-| 一阶 IIR ✓ | ★ | ★★★ | ★★★ | 当前（速度环闭环） |
-| 降采样累积 | ★★ | ★★★★ | ★★ | 低速精密控制 |
-| M/T 法 | ★★★★ | ★★★★★ | ★★★★ | 全速域高精度 |
-| PLL 观测器 | ★★★ | ★★★★★ | ★★★★★ | 高性能伺服 |
+12 Hz 与 15 Hz 的平滑度接近，但 15 Hz 响应更快，故默认选择 15 Hz。
+继续降到 10 Hz 或 8 Hz，在当前 PI 和机械系统上会出现低频控制振荡，波形
+不会更好。20 RPM 仍可能无法克服静摩擦，50 RPM 仍存在明显粘滑；这部分
+能在连续位置 `ch14` 中直接看到，不能仅靠滤波消除。
 
-当前选择一阶 IIR，后续如需更高性能可升级到 PLL，结构上完全兼容。
+### 7.3 v0.3.10 双路径滤波与实机复测
 
+统一使用5 Hz时，200～400 RPM出现约±150 RPM的真实机械自激；统一使用
+30 Hz后，200/500/1000 RPM分别稳定在约200/500/1000 RPM，标准差约
+6～7 RPM。当前采用“低速15 Hz、高速30 Hz、50～100 RPM混合”，以避免 5 Hz
+在 1 kHz 速度环中引入过大相位延迟；如需更平滑的显示，可在 VOFA 端单独滤波。
 
+最终闭环实测：10 RPM控制反馈均值9.6、标准差15.5 RPM；50 RPM均值50.8、
+标准差34.2 RPM；100 RPM均值98.4、标准差23.0 RPM；200/500 RPM均值
+199.9/499.9、标准差6.7/5.8 RPM。低速均值和方向已经正确，但50 RPM以下
+仍能在连续位置中看到真实齿槽粘滑，因此不能宣称仅靠软件已经达到“丝滑”。
 
+V/F不使用速度反馈，是检查测速器和机械本体的基准。v0.3.10的 V/F 实测：
+零速使能不动，`rpm 50`得到+50.07 RPM，`rpm -30`得到-30.18 RPM，方向
+错误和零速抖动均已修复。
 
+## 8. 上板检查
 
-在"D:\code\mcu\stm32\FOC\FOC_G431\MDK-ARM\Code\foc\Driver\encoder\ABZ编码器.md"这个文档里面完善一下接口，关于abz_encoder是输入和输出的接口定义。
+1. 上电保持 `disable`，VOFA 看 `ch2/ch15`，静止应稳定在 0 附近；
+2. 执行 `calib`，确认 `calib=1*`、`cs_ready=1`、`cs_fault=0`；
+3. 先测 100 RPM，确认 `ch15` 围绕 `ch3`；当前硬件仍可能有齿槽速度波动；
+4. 再测 500、2000 RPM；测试后执行 `target 0`、等待减速、`disable`；
+5. 10/20 RPM 要同时观察 `ch14` 位置斜率，不能只凭一帧 RPM 判断；
+6. 若手固定轴时 `ch2` 仍持续非零，记录 64 ms 净位置是否超过 4 count：
+   - 未超过：检查软件版本和 VOFA 通道；
+   - 超过：再检查 AS5047P 磁铁同心度、气隙、供电和 A/B 信号完整性。
+
+## 9. 软件仍无法解决的硬件问题
+
+以下现象出现时应转向硬件排查：
+
+- 静止净位置经常连续漂移超过 4 count，而不是相邻码往返；
+- TIM4 捕获到单方向连续假计数；
+- A/B 边沿有振铃、过冲或电平不满足 3.3 V 输入规范；
+- 磁铁偏心、倾斜、气隙过大，导致一圈内周期性角误差很大；
+- AS5047P 的磁场强度/诊断状态异常。
+
+当前板上 A/B 已有串联电阻、上拉和小电容，TIM4 输入滤波也已设为 15。
+在确认软件剩余量后，再考虑读取 AS5047P 的 SPI 诊断寄存器或调整硬件，
+不要在寄存器定义尚未确认时盲写配置。

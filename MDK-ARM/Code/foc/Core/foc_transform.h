@@ -19,15 +19,10 @@
 
 #include "foc_types.h"
 #include "foc_utils.h"
+#include <math.h>
 
-#if defined(ARM_MATH_CM4) || defined(ARM_MATH_CM7) || defined(ARM_MATH_CM33)
-#include "arm_math.h"
-#define foc_sin(x) arm_sin_f32(x)
-#define foc_cos(x) arm_cos_f32(x)
-#else
 #define foc_sin(x) sinf(x)
 #define foc_cos(x) cosf(x)
-#endif
 
 #ifdef __cplusplus
 extern "C" {

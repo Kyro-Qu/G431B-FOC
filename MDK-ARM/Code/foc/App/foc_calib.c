@@ -44,6 +44,35 @@ static float calib_ramp_voltage(uint32_t now, float target_voltage)
     return target_voltage * ((float)elapsed / (float)FOC_CALIB_VOLTAGE_RAMP_MS);
 }
 
+/*
+ * Full calibration alignment trajectory.
+ *
+ * Building the field directly at theta_e=0 can leave the rotor trapped near
+ * the opposite electrical equilibrium when the alignment voltage is small.
+ * Build the field at -90 electrical degrees first, then sweep it to zero.
+ * The moving field supplies a deterministic pull-out torque before the final
+ * encoder zero is captured.
+ */
+static float calib_align_theta(uint32_t now)
+{
+    uint32_t elapsed = (uint32_t)(now - calib_tick);
+    uint32_t sweep_ms;
+    float progress;
+
+    if (elapsed <= FOC_CALIB_VOLTAGE_RAMP_MS) {
+        return -_PI_2;
+    }
+    if (FOC_CALIB_ALIGN_MS <= FOC_CALIB_VOLTAGE_RAMP_MS) {
+        return FOC_CALIB_ALIGN_THETA_E;
+    }
+
+    sweep_ms = FOC_CALIB_ALIGN_MS - FOC_CALIB_VOLTAGE_RAMP_MS;
+    progress = (float)(elapsed - FOC_CALIB_VOLTAGE_RAMP_MS) /
+               (float)sweep_ms;
+    progress = foc_clampf(progress, 0.0f, 1.0f);
+    return -_PI_2 * (1.0f - progress);
+}
+
 /* 清掉历史 Z 事件，防止旧事件污染本阶段 */
 static void calib_clear_pending_index(foc_motor_t *m)
 {
@@ -164,7 +193,7 @@ void foc_calib_task(void)
         return;
     }
 
-    /* 用户在校准中途 disarm（串口 e 0）：安静收尾，不锁存故障 */
+    /* 用户在校准中途 disable：安静收尾，不锁存故障 */
     if (m->state != FOC_STATE_CALIB) {
         foc_motor_restore_current_limits(m);
         m->pwm_hold = 0U;
@@ -207,8 +236,8 @@ void foc_calib_task(void)
         break;
 
     case FOC_CALIB_ALIGN:
-        /* 持续把转子吸在已知电角度，电压从 0 缓升到对齐电压 */
-        foc_motor_openloop_hold(m, FOC_CALIB_ALIGN_THETA_E,
+        /* -90° 建场后缓慢扫到 0°，避免卡在反向电角度平衡点。 */
+        foc_motor_openloop_hold(m, calib_align_theta(now),
                                 calib_ramp_voltage(now, g_foc_calib_align_voltage),
                                 0.0f);
         if (calib_elapsed(now, calib_tick, FOC_CALIB_ALIGN_MS)) {
@@ -243,8 +272,6 @@ void foc_calib_task(void)
             /* Z 脉冲到来：对齐点 → Z 点的机械角距离换算电角度偏移。
              * 之后 θm 从 Z 点起算，所以 offset = θe(Z)：
              *   θe(Z) = θe(对齐) + dir·pp·Δθm */
-            uint32_t pm;
-
             /* 存储偏移：Z 点的电角度是电机的固有属性，直接沿用；
              * 全新校准：由对齐点到 Z 点的机械角距离计算 */
             if (m->calib.from_store == 0U) {
@@ -268,20 +295,19 @@ void foc_calib_task(void)
             foc_motor_openloop_hold(m, FOC_CALIB_ALIGN_THETA_E, 0.0f, 0.0f);
             foc_motor_set_angle_source(m, FOC_ANGLE_ENCODER_CALIBRATED);
             foc_motor_restore_current_limits(m);
-            m->drv->disable();
+            foc_motor_disarm(m);
 
-            /* 临界区回写状态：drv->disable() 期间 ISR 可能刚锁存
-             * FAULT，无条件写 IDLE 会把故障吞掉 */
-            pm = foc_critical_enter();
-            if (m->state == FOC_STATE_CALIB) {
-                m->state = FOC_STATE_IDLE;
-                foc_critical_exit(pm);
+            /*
+             * 统一走标准停机路径：除关闭 PWM 外，还会清除速度/位置 PI、
+             * 低速轨迹以及 dq 电流遥测残值。disarm() 内部保护收尾瞬间
+             * 由 ISR 锁存的 FAULT，不会把它误写回 IDLE。
+             */
+            if (m->state == FOC_STATE_IDLE) {
                 calib_set_state(FOC_CALIB_DONE);
                 calib_checkpoint(SYSTEM_CHECKPOINT_CALIB_DONE);
             } else {
-                foc_critical_exit(pm);
                 /* 收尾瞬间被打进 FAULT：角度结果仍有效（valid=1），
-                 * 但本次会话按失败收场，故障码留给用户 f 清除 */
+                 * 但本次会话按失败收场，故障码留给用户 fault clear 清除 */
                 calib_set_state(FOC_CALIB_FAIL);
                 calib_checkpoint(SYSTEM_CHECKPOINT_CALIB_FAIL);
             }

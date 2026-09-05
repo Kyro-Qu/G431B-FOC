@@ -28,6 +28,7 @@
 #include "foc_telemetry.h"
 #include "abz_encoder.h"
 #include "current_shunt.h"
+#include "foc_can.h"
 #include <stdio.h>
 
 /* USER CODE END Includes */
@@ -54,6 +55,8 @@
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
 
+FDCAN_HandleTypeDef hfdcan1;
+
 OPAMP_HandleTypeDef hopamp1;
 OPAMP_HandleTypeDef hopamp2;
 OPAMP_HandleTypeDef hopamp3;
@@ -67,6 +70,8 @@ DMA_HandleTypeDef hdma_usart2_rx;
 
 /* USER CODE BEGIN PV */
 volatile uint32_t g_abz_z_irq_count = 0;
+/* Button EXTI only records the event; PWM/calibration actions run in main. */
+volatile uint8_t g_key_pending = 0U;
 volatile system_fault_diag_t g_system_fault_diag = {0};
 
 /* USER CODE END PV */
@@ -77,6 +82,7 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_ADC2_Init(void);
+static void MX_FDCAN1_Init(void);
 static void MX_OPAMP1_Init(void);
 static void MX_OPAMP2_Init(void);
 static void MX_OPAMP3_Init(void);
@@ -84,18 +90,6 @@ static void MX_TIM1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM4_Init(void);
 /* USER CODE BEGIN PFP */
-
-
-int fputc(int ch, FILE *f) {
-  HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xffff);
-  return ch;
-}
-
-int fgetc(FILE *f) {
-  uint8_t ch = 0;
-  HAL_UART_Receive(&huart2, &ch, 1, 0xffff);
-  return ch;
-}
 
 /* USER CODE END PFP */
 
@@ -313,6 +307,7 @@ int main(void)
   MX_DMA_Init();
   MX_ADC1_Init();
   MX_ADC2_Init();
+  MX_FDCAN1_Init();
   MX_OPAMP1_Init();
   MX_OPAMP2_Init();
   MX_OPAMP3_Init();
@@ -321,20 +316,24 @@ int main(void)
   MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 
+  /* Keep command UART below the TIM1/ADC control interrupts. */
+  HAL_NVIC_SetPriority(USART2_IRQn, 4, 0);
+
   foc_app_init();
+  foc_can_init();
   if (foc_app_motor(0)->state != FOC_STATE_FAULT)
   {
-    printf("Current offsets U/V/W: %u, %u, %u\r\n",
-           g_current_shunt_diag.offset_u,
-           g_current_shunt_diag.offset_v,
-           g_current_shunt_diag.offset_w);
-    printf("FOC ready, %u axis. Press KEY to run, or type 'help' here.\r\n",
-           (unsigned)FOC_NUM_AXES);
+    foc_cmd_print("Current offsets U/V/W: %u, %u, %u\r\n",
+                  g_current_shunt_diag.offset_u,
+                  g_current_shunt_diag.offset_v,
+                  g_current_shunt_diag.offset_w);
+    foc_cmd_print("FOC ready, %u axis. Press KEY to run, or type 'help' here.\r\n",
+                  (unsigned)FOC_NUM_AXES);
   }
   else
   {
-    printf("Current sensing not ready, shunt fault=%u\r\n",
-           g_current_shunt_diag.fault_code);
+    foc_cmd_print("Current sensing not ready, shunt fault=%u\r\n",
+                  g_current_shunt_diag.fault_code);
   }
 
   /* USER CODE END 2 */
@@ -349,6 +348,20 @@ int main(void)
 
     /* 全部应用逻辑（校准状态机/串口命令/健康监测）都在这里面 */
     foc_app_task();
+    foc_can_task();
+
+    /* Never enable PWM or start calibration from the GPIO ISR. */
+    if (g_key_pending != 0U)
+    {
+      uint32_t primask = __get_PRIMASK();
+      __disable_irq();
+      g_key_pending = 0U;
+      if (primask == 0U)
+      {
+        __enable_irq();
+      }
+      foc_app_on_key();
+    }
 
   }
   /* USER CODE END 3 */
@@ -394,6 +407,45 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
+  * @brief FDCAN1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_FDCAN1_Init(void)
+{
+  /* 170 MHz kernel clock:
+   * nominal: 170 MHz / (20 * 17 TQ) = 500 kbit/s
+   * data:    170 MHz / ( 5 * 17 TQ) =   2 Mbit/s
+   * sample point: (1 + 13) / 17 = 82.35 %. */
+  hfdcan1.Instance = FDCAN1;
+  hfdcan1.Init.ClockDivider = FDCAN_CLOCK_DIV1;
+  hfdcan1.Init.FrameFormat = FDCAN_FRAME_FD_BRS;
+  hfdcan1.Init.Mode = FDCAN_MODE_NORMAL;
+#if FOC_CAN_AUTO_RETRANSMISSION
+  hfdcan1.Init.AutoRetransmission = ENABLE;
+#else
+  hfdcan1.Init.AutoRetransmission = DISABLE;
+#endif
+  hfdcan1.Init.TransmitPause = DISABLE;
+  hfdcan1.Init.ProtocolException = DISABLE;
+  hfdcan1.Init.NominalPrescaler = 20;
+  hfdcan1.Init.NominalSyncJumpWidth = 3;
+  hfdcan1.Init.NominalTimeSeg1 = 13;
+  hfdcan1.Init.NominalTimeSeg2 = 3;
+  hfdcan1.Init.DataPrescaler = 5;
+  hfdcan1.Init.DataSyncJumpWidth = 3;
+  hfdcan1.Init.DataTimeSeg1 = 13;
+  hfdcan1.Init.DataTimeSeg2 = 3;
+  hfdcan1.Init.StdFiltersNbr = 1;
+  hfdcan1.Init.ExtFiltersNbr = 0;
+  hfdcan1.Init.TxFifoQueueMode = FDCAN_TX_QUEUE_OPERATION;
+  if (HAL_FDCAN_Init(&hfdcan1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -780,11 +832,11 @@ static void MX_TIM4_Init(void)
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
-  sConfig.IC1Filter = 15;
+  sConfig.IC1Filter = 2;
   sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
-  sConfig.IC2Filter = 15;
+  sConfig.IC2Filter = 2;
   if (HAL_TIM_Encoder_Init(&htim4, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -887,6 +939,17 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
+  /* SIT1042T S/STB is active high: hold the transceiver in standby while
+   * FDCAN filters and interrupts are being configured. */
+  HAL_GPIO_WritePin(CAN_SHD_GPIO_Port, CAN_SHD_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin : CAN_SHD_Pin */
+  GPIO_InitStruct.Pin = CAN_SHD_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(CAN_SHD_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : KEY_Pin */
   GPIO_InitStruct.Pin = KEY_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
@@ -899,8 +962,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(ABZ_Z_GPIO_Port, &GPIO_InitStruct);
 
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  /* EXTI interrupt init: Z-index priority must be below ADC1_2_IRQn (2,0) to prevent EMI jitter storms from starving FOC control */
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
@@ -928,7 +991,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         if (current_time - last_press_time > debounce_delay)
         {
             last_press_time = current_time;
-            foc_app_on_key();
+            g_key_pending = 1U;
         }
     }
     if (GPIO_Pin == ABZ_Z_Pin) {

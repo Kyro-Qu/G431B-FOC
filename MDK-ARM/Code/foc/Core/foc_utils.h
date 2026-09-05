@@ -45,23 +45,25 @@ static inline float foc_clampf(float x, float lo, float hi)
     return x;
 }
 
-/** 角度归一化到 [0, 2π) */
+/** 角度归一化到 [0, 2π)（无 fmodf 开销，极速内联） */
 static inline float foc_wrap_0_2pi(float angle)
 {
-    angle = fmodf(angle, _2PI);
-    if (angle < 0.0f) {
+    while (angle >= _2PI) {
+        angle -= _2PI;
+    }
+    while (angle < 0.0f) {
         angle += _2PI;
     }
     return angle;
 }
 
-/** 角度差归一化到 [-π, π)，用于位置误差与角度增量解算 */
+/** 角度差归一化到 [-π, π)，用于位置误差与角度增量解算（极速内联） */
 static inline float foc_wrap_pm_pi(float angle)
 {
-    angle = fmodf(angle, _2PI);
-    if (angle >= _PI) {
+    while (angle >= _PI) {
         angle -= _2PI;
-    } else if (angle < -_PI) {
+    }
+    while (angle < -_PI) {
         angle += _2PI;
     }
     return angle;

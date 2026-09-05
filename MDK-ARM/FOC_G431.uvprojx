@@ -81,7 +81,7 @@
           </BeforeMake>
           <AfterMake>
             <RunUserProg1>0</RunUserProg1>
-            <RunUserProg2>1</RunUserProg2>
+            <RunUserProg2>0</RunUserProg2>
             <UserProg1Name></UserProg1Name>
             <UserProg2Name></UserProg2Name>
             <UserProg1Dos16Mode>0</UserProg1Dos16Mode>
@@ -340,7 +340,7 @@
               <MiscControls>--diag_suppress=1,111</MiscControls>
               <Define>USE_HAL_DRIVER,STM32G431xx,ARM_MATH_CM4</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32G4xx_HAL_Driver/Inc;../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32G4xx/Include;../Drivers/CMSIS/Include;./Code/foc/App;./Code/foc/Core;./Code/foc/HAL;./Code/foc/Driver;./Code/foc/Driver/encoder;./Code/foc/Driver/current;./Code/foc/Driver/hall</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32G4xx_HAL_Driver/Inc;../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32G4xx/Include;../Drivers/CMSIS/Include;./Code/foc/App;./Code/foc/Core;./Code/foc/HAL;./Code/foc/Driver;./Code/foc/Driver/encoder;./Code/foc/Driver/current;./Code/foc/Driver/hall;./Code/foc/Driver/can</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -514,6 +514,11 @@
               <FileName>stm32g4xx_hal_gpio.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_gpio.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32g4xx_hal_fdcan.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_fdcan.c</FilePath>
             </File>
             <File>
               <FileName>stm32g4xx_hal_exti.c</FileName>
@@ -817,6 +822,11 @@
               <FileName>hall_sensor.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Code\foc\Driver\hall\hall_sensor.c</FilePath>
+            </File>
+            <File>
+              <FileName>foc_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Code\foc\Driver\can\foc_can.c</FilePath>
             </File>
           </Files>
         </Group>
