@@ -61,6 +61,7 @@ void foc_app_vf_reset_commands(void)
         foc_motor_openloop_spin(&g_foc_motors[0], 0.0f, 0.0f, 0.0f);
         g_foc_motors[0].vel_ref_rpm = 0.0f;
         g_foc_motors[0].iq_ref = 0.0f;
+        g_foc_motors[0].id_ref = 0.0f;
     }
 }
 

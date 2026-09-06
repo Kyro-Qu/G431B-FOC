@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FOC_G431 修复复核评估 · commit 3a7a4a2 · 2026-09-06</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root{
+    --ink:#1f2933;--sub:#52606d;--line:#d9dee3;--bg:#f5f7f9;--card:#fff;
+    --blue:#2f6f9f;--orange:#e08a3c;--red:#c0504d;--green:#5b9279;--amber:#b8860b;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;font-size:15px;line-height:1.72;}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 22px 64px;}
+  header.top{background:linear-gradient(135deg,#23503e,#3f7d63);color:#fff;border-radius:14px;padding:26px 30px;margin-bottom:22px;}
+  header.top h1{margin:0 0 6px;font-size:23px;}
+  header.top .meta{font-size:13px;opacity:.93;display:flex;flex-wrap:wrap;gap:6px 22px;margin-top:10px;}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px 26px;margin-bottom:20px;}
+  h2{font-size:19px;margin:4px 0 14px;padding-left:11px;border-left:5px solid var(--green);}
+  h3{font-size:16.5px;margin:20px 0 8px;color:#23503e;}
+  h4{font-size:14.5px;margin:13px 0 5px;color:var(--sub);}
+  p{margin:8px 0;}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13.6px;}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}
+  th{background:#eef3f0;font-weight:600;}
+  tr:nth-child(even) td{background:#fafcfb;}
+  code{font-family:Consolas,"Courier New",monospace;background:#eef1f3;padding:1px 6px;border-radius:4px;font-size:13px;color:#23503e;}
+  .tag{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:10px;color:#fff;margin-right:5px;white-space:nowrap;}
+  .ok{background:var(--green);} .warn{background:var(--orange);} .info{background:var(--blue);} .nit{background:var(--sub);}
+  .pass{color:var(--green);font-weight:700;} .cond{color:var(--orange);font-weight:700;}
+  .callout{border-radius:9px;padding:12px 16px;margin:12px 0;font-size:14px;}
+  .c-good{background:#edf5f1;border-left:4px solid var(--green);}
+  .c-warn{background:#fbf3e8;border-left:4px solid var(--orange);}
+  .c-info{background:#edf2f6;border-left:4px solid var(--blue);}
+  .issue{border:1px solid var(--line);border-radius:10px;padding:4px 18px 14px;margin:16px 0;}
+  .issue .head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 4px;}
+  .issue .head .t{font-size:16px;font-weight:700;}
+  .formula{background:#f7f9fa;border:1px dashed #c4cdd5;border-radius:8px;padding:10px 14px;margin:10px 0;font-family:Consolas,monospace;font-size:13.2px;white-space:pre-wrap;line-height:1.6;}
+  .chart{width:100%;height:340px;margin:8px 0;}
+  ul{margin:8px 0;padding-left:22px;}li{margin:4px 0;}
+  .small{font-size:12.6px;color:var(--sub);}
+  .step{border-left:3px solid var(--green);padding:2px 0 2px 14px;margin:9px 0;}
+  footer{color:var(--sub);font-size:12.5px;text-align:center;margin-top:24px;}
+  @media(max-width:760px){.chart{height:300px;}header.top{padding:20px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>FOC_G431 修复措施 · 独立复核评估报告</h1>
+  <div class="meta">
+    <span>复核提交：3a7a4a2（fix: P0 voltage limit / P1 impedance / P2 state leak）</span>
+    <span>在线固件：build Sep 6 2026 09:05:03</span>
+  </div>
+  <div class="meta">
+    <span>复核方法：git diff + 源码走读 + COM44 在线只读核验（三路交叉，不只看修改说明）</span>
+    <span>日期：2026-09-06</span><span>本轮未改动任何源码</span>
+  </div>
+</header>
+
+<!-- 总览 -->
+<section>
+  <h2>1. 复核结论总览</h2>
+  <div class="callout c-good">
+    <b>总体结论：三处修复在代码层面均成立、方向正确，且已在新固件中实际生效；P0 的主隐患路径被真正堵上，P1-1 的参数与版本处理正确且必要，P2 在线验证已无残留。</b>同时发现 1 个需要立即处理的运维项（抗齿槽表当前为空、未持久化）和若干可选加固点，详见第 4、5 节。
+  </div>
+  <table>
+    <tr><th style="width:56px">项</th><th style="width:200px">修改</th><th>代码级核验</th><th style="width:120px">在线核验</th><th style="width:90px">结论</th></tr>
+    <tr>
+      <td><b>P0</b></td><td>电流环限幅每快环随实时 u_dc 刷新<br><code>foc_motor.c:917-921</code></td>
+      <td>位置在电流闭环分支、PID 计算前；PID 的积分钳位/条件抗饱和/输出钳位三处都用同一 <code>out_limit</code>，故积分会被实时"压回"，而非仅停止累积——主路径闭环成立。</td>
+      <td>新固件在板（09:05）</td>
+      <td class="pass">通过<br><span class="small">附可选加固</span></td>
+    </tr>
+    <tr>
+      <td><b>P1-1</b></td><td>Rs=0.437Ω、Ls=336µH；STORE_VER 8→9<br><code>foc_config.h</code> / <code>foc_store.c:16</code></td>
+      <td>参数块 <code>params</code> 整体入库、加载时整体覆盖编译默认值（<code>foc_store.c:96</code>），所以<b>升版本号是让新阻抗不被旧 Flash 覆盖的必要动作</b>，处理正确；三次独立测量一致。</td>
+      <td>升级后已重新校准（新 offset=1.1934）</td>
+      <td class="pass">通过<br><span class="small">注意清空副作用</span></td>
+    </tr>
+    <tr>
+      <td><b>P2</b></td><td>V/F 复位补 <code>iq_ref=0</code><br><code>foc_app.c:63</code></td>
+      <td>该复位函数被命令/CAN/状态切换共 9 处调用，覆盖全部停机与切模式路径。</td>
+      <td>V/F 下 id/iq 及 ref 全为 0.000 A</td>
+      <td class="pass">通过<br><span class="small">1 个 nit</span></td>
+    </tr>
+  </table>
+</section>
+
+<!-- P0 -->
+<section>
+  <h2>2. 逐项深度复核</h2>
+  <div class="issue">
+    <div class="head"><span class="tag ok">P0 · 通过</span><span class="t">电流环限幅动态同源 —— 为什么这次是真的堵住了</span></div>
+    <h4>改动</h4>
+    <p>快环 16 kHz、进入电流 PID 前每拍执行：<code>v_limit = m-&gt;drv-&gt;u_dc*INV_SQRT_3; foc_pid_set_limit(&amp;pid_id/pid_iq, v_limit);</code>（<code>foc_motor.c:919-921</code>）。初始化处的冻结值（L661）保留为首次调用前的初值，随后每拍被覆盖，无害且必要。</p>
+    <h4>机制核验（关键：set_limit 到底改了什么）</h4>
+    <p><code>foc_pid_set_limit</code> 更新 PID 的 <code>out_limit</code>，而 <code>foc_pid_update</code> 在<b>三个地方</b>同时使用它：</p>
+    <div class="formula">foc_pid.c:30   积分项每拍单独钳位  integral = clamp(integral, -out_limit, +out_limit)
+foc_pid.c:47   条件积分抗饱和    输出越限且误差同向 → 撤销本拍积分
+foc_pid.c:56   最终输出钳位      output = clamp(output, -out_limit, +out_limit)</div>
+    <p>因此母线塌陷、<code>u_dc</code> 实时下降时，L30 会把<b>已经累积的积分主动压回到缩小后的电压范围</b>，而不是"积分停在大值、等恢复时全压释放"。这正是 08-31 浪涌所缺的一环，修复逻辑闭环。位置也准确：只在电流闭环 <code>else</code> 分支（开环校准分支不需要），且与既有 SVPWM 同样假设 <code>m-&gt;drv</code> 已绑定，未引入新的空指针风险。</p>
+    <h4>残余风险定量（为什么仍建议留一道可选保险）</h4>
+    <div class="formula">电流环 out_ramp 仍为 0（init 第6参），恢复瞬间输出可单拍跳变；但积分已被压小，
+跳变只来自比例项：Vp = Kp·e，Kp = Ls·ωc = 336e-6×2000 = 0.672 V/A
+即便恢复瞬间电流误差 e=5 A，Vp≈3.4 V，远小于修复前"积分 windup 到接近满压"的情形，
+配合软/硬过流，已不足以复现单拍 14 A。</div>
+    <div class="callout c-info"><b>结论：</b>P0 主导因素（积分 windup）已消除，残余仅为受 Kp 限幅的比例阶跃，幅度可控、可接受。若要进一步做"教科书级"鲁棒，可<b>可选</b>再加：①电流环非零 <code>out_ramp</code>（电压斜率限制）；②对"u_dc 单拍快速跌落"走快速通道，不等 UVLO 的 100 ms 防抖。二者属锦上添花，不是当前必需。</div>
+  </div>
+
+  <div class="issue">
+    <div class="head"><span class="tag ok">P1-1 · 通过</span><span class="t">阻抗校正与 STORE_VER 升级 —— 升版本号是必要而非多余</span></div>
+    <h4>① 新阻抗值可信：三次独立测量相互印证</h4>
+    <div id="chart1" class="chart"></div>
+    <div id="fb1" style="display:none"><table>
+      <tr><th>参数</th><th>历史注释值</th><th>09-06 助手 ident</th><th>你台架 ident</th></tr>
+      <tr><td>Rs (Ω)</td><td>0.395</td><td>0.4456</td><td>0.4373</td></tr>
+      <tr><td>Ls (µH)</td><td>301</td><td>333.49</td><td>336.63</td></tr>
+    </table></div>
+    <p class="small">Rs 三次落在 0.40~0.45 Ω、Ls 落在 301~337 µH，离散度 &lt;12%，取 0.437 Ω / 336 µH 合理；原 0.10 Ω / 20 µH 确属偏离实物约 4.4×/16.8× 的占位值。</p>
+    <h4>② 为什么必须同时升 STORE_VER（容易被误判为"多余"）</h4>
+    <div class="formula">foc_store.c:23  参数块内 foc_motor_params_t params;   ← Rs/Ls 随整个 params 入库
+foc_store.c:89  if(magic 不符 || version != STORE_VER) return EMPTY;
+foc_store.c:96  *params = s->params;                ← 版本匹配时，Flash 值整体覆盖编译默认值</div>
+    <p>也就是说：<b>只改 <code>foc_config.h</code> 而不升版本，开机时旧 v8 块里的 Rs=0.1/Ls=20µH 会经 L96 把新编译默认值再覆盖回去，等于白改。</b>升到 v9 后 L89 判旧块无效、回退到编译新值——这一步是让修复真正生效的关键，处理正确。</p>
+    <h4>③ 升级副作用（必须知晓的一次性代价）</h4>
+    <div class="callout c-warn">
+      同一个参数块里还存着<b>编码器校准（dir/offset）、全部控制环整定参数、抗齿槽表</b>（<code>foc_store.c:46-53</code>）。版本升级后这些<b>一次性全部清空</b>，需要重新走一遍：<code>calib full</code> →（需要的话）<code>acog start/finish/enable</code> → <code>conf write</code>，写回的才是 v9 块。在线已见到新 offset=1.1934 rad，说明校准已重做；但抗齿槽表当前为空（见第 4 节）。
+    </div>
+    <h4>④ 后续参数维护提醒</h4>
+    <ul>
+      <li>Rs 随绕组温升可上升约 30~50%，Ki=Rs·ω 按冷机整定时留裕度，避免热态电流环偏软/振荡。</li>
+      <li>方波注入测到的是含饱和的视在电感，若要精细，可在 25%/50% 额定电流多点辨识，确认 Ls 随负载的变化。</li>
+    </ul>
+  </div>
+
+  <div class="issue">
+    <div class="head"><span class="tag ok">P2 · 通过</span><span class="t">V/F 状态泄露 —— 修复到位，调用面完整</span></div>
+    <p><code>foc_app_vf_reset_commands()</code> 被 <code>foc_app.c:489</code>、<code>foc_cmd.c</code> 4 处、<code>foc_can.c</code> 4 处共 <b>9 个路径</b>调用，停机、切模式、CLI、CAN 全覆盖。在线切到 V/F（IDLE）实测：<code>id=0 id_ref=0 iq=0 iq_ref=0</code>，原 3.653 A 残留已消除。</p>
+    <p><span class="tag nit">nit · 可选</span> 此处只清了 <code>iq_ref</code>，未清 <code>id_ref</code>。实际进入 V/F 前若无弱磁，<code>id_ref</code> 本就为 0（在线已验证为 0.000），所以<b>不补也不会出现残留显示</b>；仅从"状态彻底归零"的防御性角度，可在 L63 旁并列一行 <code>g_foc_motors.id_ref = 0.0f;</code>，属于风格完善，不是缺陷。</p>
+  </div>
+</section>
+
+<!-- 对用户判断的意见 -->
+<section>
+  <h2>3. 对你"问题合理性判断表"的独立意见</h2>
+  <table>
+    <tr><th style="width:70px">你的判断</th><th>独立复核意见</th></tr>
+    <tr><td>P0 完全合理（致命隐患）</td><td><span class="pass">认同。</span>并补充了"为何动态 set_limit 能让积分主动退饱和"的代码证据（PID 三处共用 out_limit），以及修复后残余仅比例阶跃 ≈Kp·e 的定量上界。</td></tr>
+    <tr><td>P1-1 完全合理（参数失真）</td><td><span class="pass">认同。</span>你复测得 0.4373 Ω / 336.63 µH，与另两次测量一致；并请注意：升 STORE_VER 是让新值不被 Flash 旧 params 覆盖的<b>必要</b>动作，不是可选项。</td></tr>
+    <tr><td>P1-2 部分合理：轻惯量空载低速受编码器分辨率极限，不宜强积分；acog 使能后 20 RPM 波动 57→34（改善 40%）</td><td><span class="pass">判断正确，且与我此前的对照实验互洽。</span>定量看：2048 CPR 在 20 RPM 时计数率仅 20/60×2048≈683 cnt/s，慢环每拍约 0.68 个计数，M 法测速量化台阶天然较大；空载时转动惯量 J 极小，同样的力矩纹波引起的速度波动 Δω≈T/J 反而被放大——所以<b>空载极低速"做不到零纹波"是物理本质，靠加大积分硬压只会在量化台阶上发散</b>，你的取舍正确。acog 把峰峰从 57 降到 34 证明齿槽补偿方向对；但 34 RPM 相对 20 RPM 目标仍偏大（约 ±85%），后续靠"精标定 acog + 低速反馈用 64 ms 最小二乘长窗"还能再收，合理目标是<b>不反转、不失步、均值准确</b>而非零波动。</td></tr>
+    <tr><td>P2（iq_ref 泄露）完全合理</td><td><span class="pass">认同，</span>在线已验证清零；仅补充 id_ref 的防御性 nit。</td></tr>
+    <tr><td>P2-2 硬件逐周期限流：理论合理但当前硬件不推荐，三电阻已有 12 A 单拍硬过流，无外接 DAC 前强配易误刹</td><td><span class="cond">基本认同"当前后置"，但澄清一处技术事实。</span>STM32G4 的模拟比较器阈值可由<b>片内 DAC</b> 提供，并不需要外接 DAC 硬件网络；真正的工作量在于把比较器输入接到相/母线电流检测点、与 TIM1 BKIN 联动并验证关断时序，确属驱动+硬件层改造。更重要的是：P0 软件动态限幅落地后，"积分 windup 型浪涌"已被消除，硬件逐周期限流的定位已从"必需的主防线"变为"应对桥臂直通/真短路的最后一道纵深"，<b>因此当前不做、优先把软件做扎实是合理的工程排序</b>；建议在文档中把它保留为后续可选项，而非永久删除。</td></tr>
+  </table>
+  <div id="chart2" class="chart" style="height:320px"></div>
+  <div id="fb2" style="display:none"><table><tr><th>20 RPM 工况</th><th>速度波动 (RPM)</th></tr><tr><td>acog 使能前</td><td>57</td></tr><tr><td>acog 使能后</td><td>34</td></tr></table></div>
+  <p class="small">图 2 数据来源：你提供的台架实测（2026-09-06），虚线为 20 RPM 目标。</p>
+</section>
+
+<!-- 在线核验 -->
+<section>
+  <h2>4. COM44 在线只读核验记录（未使能电机）</h2>
+  <table>
+    <tr><th>核验项</th><th>在线结果</th><th>判读</th></tr>
+    <tr><td>固件 build / 编译产物</td><td>在线 build Sep 6 09:05:03；hex/axf 09:05:09</td><td class="pass">源码—编译—烧录一致（原报告"hex 比在线新"的疑点已消除）</td></tr>
+    <tr><td>升级后校准</td><td>calib=1，calib_state=6(DONE)，dir=−1，offset=1.1934 rad（新值）</td><td class="pass">STORE_VER 升级后已重新校准</td></tr>
+    <tr><td>P2 状态泄露</td><td>mode=vf 下 id/id_ref/iq/iq_ref 均 0.000 A，vf applied=0</td><td class="pass">残留消除</td></tr>
+    <tr><td>母线</td><td>vbus=14.46 V（raw=1727 OK），udc_drv 同步</td><td class="pass">采样/自适应正常</td></tr>
+    <tr><td>故障/采样链</td><td>fault=0，cs_fault=0，rejected=0，consecutive=0</td><td class="pass">干净</td></tr>
+    <tr><td><b>抗齿槽表</b></td><td><code>acog state=IDLE enable=0 samples=0 pts=144</code></td><td class="cond">当前为空且未使能——见第 5 节第 1 项</td></tr>
+  </table>
+</section>
+
+<!-- 待办 -->
+<section>
+  <h2>5. 需要处理 / 确认的事项（按优先级）</h2>
+  <div class="step"><b>【应尽快处理】把抗齿槽表重新标定并持久化。</b>在线实测 <code>acog state=IDLE / enable=0 / samples=0</code>：你台架测出"20 RPM 波动 57→34"的那张表，目前<b>既没使能也没留在 Flash</b>（升 v9 清空 + 未 conf write，掉电即失）。建议在 IDLE/RUN 下走 <code>acog start</code>（匀速扫一圈采样）→ <code>acog finish</code> → <code>acog enable 1</code> → <code>conf write</code>，写回后再用 status 确认 state=READY、enable=1，复测 20/30 RPM 波动并记录。</div>
+  <div class="step"><b>【请确认】校准是否已写入 v9 Flash。</b>在线 offset=1.1934 是有效 RAM 值；若校准后尚未 <code>conf write</code>，下次上电 L89 仍判 EMPTY、需要重新对零。请执行一次 <code>conf write</code>（可与上一步 acog 一起），确保 Flash 为 v9 且含 calib。</div>
+  <div class="step"><b>【建议】参数裕度：</b>按热态 Rs 上浮留 Ki 裕度；必要时多点辨识 Ls 饱和曲线。</div>
+  <div class="step"><b>【可选加固，非必需】</b>①电流环非零 out_ramp / u_dc 快速跌落通道；②L63 并列清 id_ref；③硬件 CMP(片内DAC)+BKIN 逐周期限流作为长期纵深，当前可后置。</div>
+  <div class="step"><b>【低速性能下一步】</b>在 acog 精标定基础上，评估让低速速度反馈融合 64 ms 三窗口最小二乘速度（现仅用于静止判据），并在正确阻尼前提下再谈前馈/积分，避免重蹈"欠阻尼下加前馈导致 752 RPM 冲过"。</div>
+</section>
+
+<!-- 边界 -->
+<section>
+  <h2>6. 复核方法与边界</h2>
+  <ul>
+    <li>代码结论来自 commit 3a7a4a2 实际 diff 与改后源码走读（foc_motor.c / foc_pid.c / foc_config.h / foc_store.c / foc_app.c），行号以当前工作区为准。</li>
+    <li>在线结论来自 COM44 @6.5Mbps 只读查询（version/status/acog/help），全程未使能电机、未改任何参数、未 conf write、未编辑源码。</li>
+    <li>图 1 为三次独立 ident 测量；图 2 为你提供的台架数据，已标注来源，未做改动。</li>
+    <li>"Rs/Ls 在线值"无 CLI 直接回读命令，系由"config 已改 + STORE_VER=9 使旧块失效回退编译默认 + 新固件在板"链路推断，逻辑闭合；如需 100% 数值确认，可在 IDLE 再跑一次 <code>ident</code>（不 apply）比对。</li>
+  </ul>
+</section>
+
+<footer>FOC_G431 修复独立复核 · 2026-09-06 · 基于 commit 3a7a4a2 源码与 COM44 在线核验，未修改任何源码</footer>
+</div>
+
+<script>
+(function(){
+  function draw(id,option,fb){var el=document.getElementById(id);
+    if(!el||typeof echarts==='undefined'){var f=document.getElementById(fb);if(f){f.style.display='block';}if(el){el.style.display='none';}return;}
+    try{var c=echarts.init(el);c.setOption(option);window.addEventListener('resize',function(){c.resize();});}
+    catch(e){var f2=document.getElementById(fb);if(f2){f2.style.display='block';}el.style.display='none';}}
+
+  var opt1={
+    backgroundColor:'transparent',
+    title:{text:'电机阻抗三次独立测量一致性（Rs 左轴 / Ls 右轴）',left:'center',textStyle:{color:'#1f2933',fontSize:14.5,fontWeight:600}},
+    tooltip:{trigger:'axis',triggerOn:'click',renderMode:'richText',confine:true,axisPointer:{type:'shadow'},textStyle:{fontSize:11,lineHeight:15},padding:[6,8]},
+    legend:{top:28,itemWidth:14,itemHeight:8,textStyle:{color:'#52606d',fontSize:11}},
+    grid:{left:50,right:56,top:64,bottom:40,containLabel:true},
+    xAxis:{type:'category',data:['历史注释值','09-06 助手 ident','你台架 ident'],axisLabel:{color:'#52606d',fontSize:11.5}},
+    yAxis:[{type:'value',name:'Rs (Ω)',min:0,max:0.5,axisLabel:{color:'#2f6f9f'},splitLine:{lineStyle:{color:'#eef1f4'}}},
+           {type:'value',name:'Ls (µH)',min:0,max:380,axisLabel:{color:'#5b9279'},splitLine:{show:false}}],
+    series:[
+      {name:'Rs 相电阻 (Ω)',type:'bar',barWidth:'30%',yAxisIndex:0,data:[0.395,0.4456,0.4373],
+        itemStyle:{color:'#2f6f9f'},label:{show:true,position:'top',fontSize:10,color:'#2f6f9f'}},
+      {name:'Ls 相电感 (µH)',type:'bar',barWidth:'30%',yAxisIndex:1,data:[301,333.49,336.63],
+        itemStyle:{color:'#5b9279'},label:{show:true,position:'top',fontSize:10,color:'#5b9279'}}
+    ]
+  };
+
+  var opt2={
+    backgroundColor:'transparent',
+    title:{text:'抗齿槽使能前后 · 20 RPM 速度波动（台架实测）',left:'center',textStyle:{color:'#1f2933',fontSize:15,fontWeight:600}},
+    tooltip:{trigger:'axis',triggerOn:'click',renderMode:'richText',confine:true,textStyle:{fontSize:11},padding:[6,8]},
+    grid:{left:46,right:24,top:56,bottom:40,containLabel:true},
+    xAxis:{type:'category',data:['acog 使能前','acog 使能后'],axisLabel:{color:'#52606d',fontSize:12}},
+    yAxis:{type:'value',name:'速度波动峰峰 (RPM)',min:0,max:70,axisLabel:{color:'#52606d'},splitLine:{lineStyle:{color:'#eef1f4'}}},
+    series:[{name:'波动',type:'bar',barWidth:'42%',
+      data:[{value:57,itemStyle:{color:'#e08a3c'}},{value:34,itemStyle:{color:'#5b9279'}}],
+      label:{show:true,position:'top',fontSize:12,color:'#1f2933'},
+      markLine:{silent:true,symbol:'none',data:[{yAxis:20}],lineStyle:{color:'#c0504d',type:'dashed'},label:{formatter:'目标 20 RPM',color:'#c0504d',fontSize:10}}}]
+  };
+
+  draw('chart1',opt1,'fb1'); draw('chart2',opt2,'fb2');
+})();
+</script>
+</body>
+</html>
