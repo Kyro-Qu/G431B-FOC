@@ -137,7 +137,8 @@
 /** 位置 PI 直接输出 Iq，速度误差项提供轨迹前馈与阻尼 */
 #define FOC_M0_POS_KP           3.00f      /* A/rad；已通过小位置阶跃验证 */
 #define FOC_M0_POS_KI           0.10f      /* A/(rad*s)；补偿静差，避免积分过强 */
-#define FOC_M0_POS_VEL_KP       0.000f     /* A/RPM；低速编码器噪声下先关闭阻尼 */
+#define FOC_M0_POS_VEL_KP       0.020f     /* A/RPM；扰动手拨回弹强制动,
+                                               无阻尼则等幅强摆 (2026-09-06) */
 #define FOC_M0_POS_VEL_LIMIT    80.0f      /* 位置模式速度上限 RPM */
 
 /** 位置模式梯形轨迹（限速限加速度的平滑运动，ODrive trap_traj） */

@@ -460,7 +460,8 @@ static void foc_motor_slow_loop(foc_motor_t *m)
     }
 
     case FOC_MODE_POSITION: {
-        float pos_ref = m->target;
+        /* target 语义 = 相对使能原点的偏移 rad；换算成多圈绝对位置参考。 */
+        float pos_ref = m->pos_origin_rad + m->target;
         float vel_ff_rpm = 0.0f;
         float pos_error;
         float iq_user;
@@ -469,22 +470,24 @@ static void foc_motor_slow_loop(foc_motor_t *m)
 
         /* 梯形轨迹：目标变化时从当前状态重规划，之后每拍输出
          * 平滑的位置参考 + 速度前馈（ODrive trap_traj 方案） */
-        if (m->cfg.traj_enable != 0U) {
+        if (m->target != m->traj_target_latch) {
+            float pos_goal = m->pos_origin_rad + m->target;
+
+            /* 新位置目标不继承上一个目标的保持转矩积分。 */
+            foc_pid_reset(&m->pid_pos);
+            foc_traj_plan(
+                &m->traj, pos_goal,
+                m->position_rad,
+                m->velocity_filt_rpm * FOC_RPM_TO_RADS,
+                m->cfg.pos_vel_limit_rpm * FOC_RPM_TO_RADS,
+                m->cfg.traj_accel_rpm_s * FOC_RPM_TO_RADS,
+                m->cfg.traj_accel_rpm_s * FOC_RPM_TO_RADS);
+            m->traj_target_latch = m->target;
+        }
+
+        if (m->traj.active != 0U) {
             float pos_r;
             float vel_ff_rads;
-
-            if (m->target != m->traj_target_latch) {
-                /* 新位置目标不继承上一个目标的保持转矩积分。 */
-                foc_pid_reset(&m->pid_pos);
-                foc_traj_plan(
-                    &m->traj, m->target,
-                    m->position_rad,
-                    m->velocity_filt_rpm * FOC_RPM_TO_RADS,
-                    m->cfg.pos_vel_limit_rpm * FOC_RPM_TO_RADS,
-                    m->cfg.traj_accel_rpm_s * FOC_RPM_TO_RADS,
-                    m->cfg.traj_accel_rpm_s * FOC_RPM_TO_RADS);
-                m->traj_target_latch = m->target;
-            }
             (void)foc_traj_eval(&m->traj, dt, &pos_r, &vel_ff_rads);
             pos_ref = pos_r;
             vel_ff_rpm = vel_ff_rads * FOC_RADS_TO_RPM;
@@ -509,7 +512,7 @@ static void foc_motor_slow_loop(foc_motor_t *m)
         iq_damp_limit =
             FOC_POS_DAMP_CURRENT_RATIO * m->params.max_current_a;
         iq_damp = m->cfg.pos_vel_kp *
-                  (vel_ff_rpm - m->velocity_filt_rpm);
+                  (vel_ff_rpm - m->velocity_observer_rpm);
         iq_user += foc_clampf(iq_damp, -iq_damp_limit, iq_damp_limit);
         m->vel_ref_rpm = vel_ff_rpm; /* status 中显示轨迹速度前馈 */
         m->iq_ref = dir * foc_clampf(
@@ -636,6 +639,7 @@ void foc_motor_init(foc_motor_t *m,
     m->traj.active = 0U;
     m->traj.xf = 0.0f;
     m->traj_target_latch = 0.0f;
+    m->pos_origin_rad = 0.0f;
     m->test_hook = 0;
     m->anticog_hook = 0;
     m->anticog_sample_hook = 0;
@@ -1039,9 +1043,12 @@ uint8_t foc_motor_arm(foc_motor_t *m)
         m->v_openloop.q = 0.0f;
     }
 
-    /* 位置模式上电即"保持当前位置"，避免使能瞬间飞车 */
+    /* 位置模式使能即锁定当前位置为"原点"：target 语义 = 相对该原点的
+     * 偏移 rad（target 0 = 原点静止，target 6.283 = 正转一圈）。
+     * 杜绝把多圈累计绝对位置当目标导致"永远在转"的语义缺陷。 */
     if (m->mode == FOC_MODE_POSITION) {
-        m->target = m->position_rad;
+        m->pos_origin_rad = m->position_rad;
+        m->target = 0.0f;
     }
     m->traj.active = 0U;
     m->traj.xf = m->position_rad;
@@ -1129,7 +1136,9 @@ uint8_t foc_motor_set_mode(foc_motor_t *m, foc_mode_t mode)
         m->ol_angle_step = 0.0f;
     }
     if (mode == FOC_MODE_POSITION) {
-        m->target = m->position_rad;
+        /* 切入位置模式：原点暂记当前位置，target 归零（arm 时再刷新原点） */
+        m->pos_origin_rad = m->position_rad;
+        m->target = 0.0f;
         m->traj.active = 0U;
         m->traj.xf = m->position_rad;
         m->traj_target_latch = m->target;

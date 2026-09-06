@@ -114,7 +114,7 @@ static void cmd_print_status(void)
                 ? (m->vel_track_pos_rad - m->position_rad) : 0.0f;
         float pos_error =
             (m->mode == FOC_MODE_POSITION)
-                ? (m->target - m->position_rad) : 0.0f;
+                ? (m->pos_origin_rad + m->target - m->position_rad) : 0.0f;
 
         /* calib 后缀 *：偏移来自 Flash 存储（快速索引搜索可用） */
         foc_cmd_print(

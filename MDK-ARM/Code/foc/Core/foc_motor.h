@@ -128,6 +128,9 @@ typedef struct foc_motor {
     /* ---- 位置模式轨迹规划 ---- */
     foc_traj_t traj;
     float traj_target_latch;       /* 已规划的目标（变化即触发重规划） */
+    float pos_origin_rad;          /* 位置模式原点: arm() 锁定的使能点位置,
+                                    * target 语义 = 相对该原点的偏移 rad,
+                                    * target 0 = 回到使能点 (伺服惯例) */
 
     /* ---- 内部 ---- */
     float ol_angle_step;           /* 开环每拍电角度增量 */
