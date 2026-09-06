@@ -1017,9 +1017,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 }
 
 /**
- * @brief 定时器周期中断回调函�?
- * @param htim 定时器句�?
- * @note �?6kHz PWM更新时触发，执行FOC控制
+ * @brief 定时器周期中断回调函数
+ * @param htim 定时器句柄
+ * @note 16kHz PWM更新时触发，执行FOC控制
  */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {

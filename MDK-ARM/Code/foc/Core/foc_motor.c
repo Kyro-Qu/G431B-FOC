@@ -532,8 +532,11 @@ static void foc_motor_slow_loop(foc_motor_t *m)
         m->anticog_sample_hook(m->theta_mech, dir * m->iq_ref);
     }
 
-    /* 抗齿槽力矩前馈补偿（在限幅前注入） */
-    if (m->anticog_hook != 0) {
+    /* 抗齿槽力矩前馈补偿（在限幅前注入）：
+     * 必须严格限定在 RUN 状态且非开环 V/F 模式，杜绝在 IDLE/CALIB/VF 状态下
+     * 因前馈常量逐拍累加导致 iq_ref 饱和冲至 -5.2A 限幅（2026-09-06 评估定位）。 */
+    if ((m->anticog_hook != 0) && (m->state == FOC_STATE_RUN) &&
+        (m->mode != FOC_MODE_OPENLOOP_VF)) {
         m->iq_ref += dir * m->anticog_hook(m->theta_mech);
     }
 

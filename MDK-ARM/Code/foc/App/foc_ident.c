@@ -55,6 +55,10 @@ static void ident_cleanup(foc_motor_t *m)
     foc_motor_openloop_hold(m, 0.0f, 0.0f, 0.0f);
     foc_motor_restore_current_limits(m);
     m->pwm_hold = 0U;
+    m->id_ref = 0.0f;
+    m->iq_ref = 0.0f;
+    m->v_dq.d = 0.0f;
+    m->v_dq.q = 0.0f;
     if (m->state == FOC_STATE_CALIB) {
         m->drv->disable();
         m->state = FOC_STATE_IDLE;

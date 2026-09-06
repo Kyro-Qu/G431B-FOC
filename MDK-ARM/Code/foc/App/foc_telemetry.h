@@ -17,8 +17,8 @@
  *   ch11 轴0 Iw (A)
  *   ch12 轴0 A 相占空比 duty_a (0..1)
  *   ch13 轴0 电机故障×100 + 电流采样故障
- *   ch14 轴0 弱磁积分 fw_integral (A)
- *   ch15 轴0 控制实际使用速度 (RPM；PLL + median3 + 自适应5/30Hz BW2)
+ *   ch14 轴0 无感观测器角度差 theta_obs - theta_e (rad，wrap到±π)
+ *   ch15 轴0 实时母线采样电压 Vbus (V；单轴模式)
  *        （双轴时为轴1 电角度）
  */
 

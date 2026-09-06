@@ -32,7 +32,7 @@ extern UART_HandleTypeDef huart2;
 #define CMD_RX_DMA_SIZE   64U
 #define CMD_LINE_SIZE     64U
 #define CMD_RX_QUEUE_SIZE 256U
-#define CMD_TX_BUF_SIZE   1024U
+#define CMD_TX_BUF_SIZE   1536U
 #define CMD_TWO_PI       6.28318530717958647692f
 
 #define FOC_FW_NAME       "FOC_G431"
@@ -237,8 +237,11 @@ static void cmd_print_help(void)
         "  ident               start Rs+Ls measurement\r\n"
         "  ident apply         apply latest result\r\n"
         "  acog                anticogging query/start/finish/enable\r\n"
+        " Diagnostics:\r\n"
+        "  obs [0|1|2 [off]]   sensorless observer compare/switch\r\n"
+        "  blackbox            dump 512-sample fault waveform\r\n"
         " Storage/telemetry:\r\n"
-        "  conf <write|erase>\r\n"
+        "  conf <read|write|erase>\r\n"
         "  log [0|1]\r\n",
         (unsigned)cur_axis);
 }
@@ -401,10 +404,39 @@ static void cmd_conf_execute(foc_motor_t *m, const char *action)
     uint8_t erase;
     uint8_t with_calib;
 
-    if ((action == 0) ||
-        ((strcmp(action, "write") != 0) &&
-         (strcmp(action, "erase") != 0))) {
-        foc_cmd_print("err: conf write|erase\r\n");
+    if ((action == 0) || (strcmp(action, "read") == 0)) {
+        foc_cmd_print(
+            "M%u conf params:\r\n"
+            "  pp=%.0f Rs=%.4f Ls=%.2fuH max_rpm=%.0f limit=%.2fA\r\n"
+            "  bw=%.0f vp=%.4f vi=%.4f ramp=%.0f lpf=%.5fs\r\n"
+            "  track_kp=%.3f track_limit=%.3f\r\n"
+            "  calib: dir=%d offset=%.4frad (valid=%u from_store=%u)\r\n"
+            "  acog: state=%u enable=%u\r\n",
+            (unsigned)cur_axis,
+            (double)m->params.pole_pairs,
+            (double)m->params.rs_ohm,
+            (double)(m->params.ls_henry * 1e6f),
+            (double)m->params.max_rpm,
+            (double)m->params.max_current_a,
+            (double)m->cfg.current_bw_rads,
+            (double)m->pid_vel.kp,
+            (double)m->pid_vel.ki,
+            (double)m->cfg.vel_ramp_rpm_s,
+            (double)m->cfg.vel_lpf_tf,
+            (double)m->cfg.vel_track_kp,
+            (double)m->cfg.vel_track_limit_rad,
+            (int)m->calib.direction,
+            (double)m->calib.electrical_offset_rad,
+            (unsigned)m->calib.valid,
+            (unsigned)m->calib.from_store,
+            (unsigned)g_m0_anticog.state,
+            (unsigned)g_m0_anticog.enable);
+        return;
+    }
+
+    if ((strcmp(action, "write") != 0) &&
+        (strcmp(action, "erase") != 0)) {
+        foc_cmd_print("err: conf read|write|erase\r\n");
         return;
     }
 
@@ -953,7 +985,7 @@ static void cmd_execute(char *line)
 
     } else if (strcmp(cmd, "conf") == 0) {
         if (arg2 != 0) {
-            foc_cmd_print("err: conf write|erase\r\n");
+            foc_cmd_print("err: conf read|write|erase\r\n");
         } else {
             cmd_conf_execute(m, arg1);
         }
@@ -1172,9 +1204,14 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
                 line_buf[line_len] = '\0';
                 line_ready = 1U;
             }
-        } else if ((line_len < (CMD_LINE_SIZE - 1U)) && (line_ready == 0U)) {
-            line_buf[line_len] = ch;
-            line_len = (uint16_t)(line_len + 1U);
+        } else if (line_ready == 0U) {
+            if (line_len < (CMD_LINE_SIZE - 1U)) {
+                line_buf[line_len] = ch;
+                line_len = (uint16_t)(line_len + 1U);
+            } else {
+                /* 单行超长被截断：真正自增溢出计数器 */
+                ++rx_queue_overflow_count;
+            }
         }
     }
 }
