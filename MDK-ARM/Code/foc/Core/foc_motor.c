@@ -913,6 +913,13 @@ void foc_motor_fast_loop(foc_motor_t *m)
          * 反馈先过 2.5kHz 陷波（混叠假影剔除），保护/遥测仍用原始值。 */
         float id_fb = foc_notch_update(&m->notch_id, m->i_dq.d);
         float iq_fb = foc_notch_update(&m->notch_iq, m->i_dq.q);
+
+        /* 电流环 PID 输出上限动态随实时母线更新（与 SVPWM/电压圆同源），
+         * 杜绝母线塌陷时条件积分 anti-windup 判据失效导致的积分发散（P0 问题优化）。 */
+        float v_limit = m->drv->u_dc * INV_SQRT_3;
+        foc_pid_set_limit(&m->pid_id, v_limit);
+        foc_pid_set_limit(&m->pid_iq, v_limit);
+
         float vd = foc_pid_update(&m->pid_id, m->id_ref - id_fb, m->dt_fast);
         float vq = foc_pid_update(&m->pid_iq, m->iq_ref - iq_fb, m->dt_fast);
 

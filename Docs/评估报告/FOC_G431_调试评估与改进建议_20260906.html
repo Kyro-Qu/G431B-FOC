@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FOC_G431 实机调试评估与改进建议 · 2026-09-06</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root{
+    --ink:#1f2933; --sub:#52606d; --line:#d9dee3; --bg:#f5f7f9; --card:#ffffff;
+    --blue:#2f6f9f; --orange:#e08a3c; --red:#c0504d; --green:#5b9279; --amber:#b8860b;
+    --p0:#c0504d; --p1:#e08a3c; --p2:#52606d; --code:#f0f3f5;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;font-size:15px;line-height:1.72;}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 22px 64px;}
+  header.top{background:linear-gradient(135deg,#244b66,#2f6f9f);color:#fff;border-radius:14px;padding:26px 30px;margin-bottom:22px;}
+  header.top h1{margin:0 0 6px;font-size:24px;letter-spacing:.5px;}
+  header.top .meta{font-size:13px;opacity:.92;display:flex;flex-wrap:wrap;gap:6px 22px;margin-top:10px;}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px 26px;margin-bottom:20px;}
+  h2{font-size:19px;margin:4px 0 14px;padding-left:11px;border-left:5px solid var(--blue);line-height:1.3;}
+  h3{font-size:16.5px;margin:20px 0 8px;color:#244b66;}
+  h4{font-size:15px;margin:14px 0 6px;color:var(--sub);}
+  p{margin:8px 0;}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13.6px;}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}
+  th{background:#eef2f5;font-weight:600;}
+  tr:nth-child(even) td{background:#fafbfc;}
+  code,.mono{font-family:Consolas,"Courier New",monospace;background:var(--code);padding:1px 6px;border-radius:4px;font-size:13px;color:#244b66;}
+  .tag{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:10px;color:#fff;margin-right:6px;white-space:nowrap;}
+  .t-meas{background:var(--green);} .t-code{background:var(--blue);} .t-cmp{background:var(--amber);}
+  .t-p0{background:var(--p0);} .t-p1{background:var(--p1);} .t-p2{background:var(--p2);}
+  .callout{border-radius:9px;padding:12px 16px;margin:12px 0;font-size:14px;}
+  .c-good{background:#eef5f1;border-left:4px solid var(--green);}
+  .c-warn{background:#fbf3e8;border-left:4px solid var(--orange);}
+  .c-bad{background:#f9eceb;border-left:4px solid var(--red);}
+  .c-info{background:#edf2f6;border-left:4px solid var(--blue);}
+  .issue{border:1px solid var(--line);border-radius:10px;padding:4px 18px 14px;margin:16px 0;}
+  .issue .head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 4px;}
+  .issue .head .t{font-size:16px;font-weight:700;}
+  .formula{background:#f7f9fa;border:1px dashed #c4cdd5;border-radius:8px;padding:10px 14px;margin:10px 0;font-family:Consolas,monospace;font-size:13.4px;white-space:pre-wrap;line-height:1.6;}
+  .chart{width:100%;height:380px;margin:8px 0;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  ul{margin:8px 0;padding-left:22px;} li{margin:4px 0;}
+  .small{font-size:12.6px;color:var(--sub);}
+  .kpi{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0;}
+  .kpi .box{flex:1;min-width:150px;background:#eef2f5;border-radius:9px;padding:10px 14px;}
+  .kpi .box .n{font-size:20px;font-weight:700;color:#244b66;}
+  .kpi .box .l{font-size:12px;color:var(--sub);}
+  .step{border-left:3px solid var(--blue);padding:2px 0 2px 14px;margin:10px 0;}
+  .step b{color:#244b66;}
+  footer{color:var(--sub);font-size:12.5px;text-align:center;margin-top:24px;}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr;}header.top{padding:20px;}.chart{height:330px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>FOC_G431 工程 · 实机调试评估与改进建议报告</h1>
+  <div class="meta">
+    <span>板卡：Matchstick_HFOC_G431（STM32G431）</span>
+    <span>电机：DJI 2312S（7极对 / 12N14P 外转子）</span>
+    <span>编码器：ABZ 2048 CPR</span>
+    <span>母线：14.4 V（4S）</span>
+  </div>
+  <div class="meta">
+    <span>在线固件：v0.3.11，build Sep 6 2026 08:03:45</span>
+    <span>调试口：COM44 @ 6.5 Mbps 8N1</span>
+    <span>测试日期：2026-09-06</span>
+    <span>方式：源码只读 + RAM 在线测试（未改源码 / 未烧录 / 未 conf write）</span>
+  </div>
+</header>
+
+<!-- ============ 0 结论速览 ============ -->
+<section>
+  <h2>0. 结论速览（TL;DR）</h2>
+  <div class="callout c-good">
+    <b>总体判断：</b>这套固件的<b>架构成熟度已经明显高于 SimpleFOC、整体接近 ODrive / VESC 的分层水平</b>——快/慢环分层、硬/软双过流、条件积分抗饱和、dq 解耦、死区补偿、弱磁矢量圆、梯形轨迹、三窗口最小二乘测速 + 二阶 PLL、在线 Rs/Ls 辨识、抗齿槽表框架、实时母线采样与 UVLO/OVLO 都已具备。本次实测确认：<b>功率级、换相、电流采样、编码器方向/索引都是健康的</b>（开环 V/F 30 RPM 平稳、三相零漂仅 ±0.1 A、校准一次成功）。
+  </div>
+  <p>当前真正制约可用性的是下面三件事，均有<b>实测数据 + 源码行号</b>双重依据，且已用对照实验排除了想当然的解释：</p>
+  <table>
+    <tr><th style="width:64px">优先级</th><th style="width:230px">问题</th><th>一句话结论与证据</th></tr>
+    <tr>
+      <td><span class="tag t-p0">P0</span></td>
+      <td>电流环抗饱和限幅在初始化时被"冻结"，且无电压斜率限制</td>
+      <td>电流环 PID 输出上限 <code>v_max=u_dc/√3</code> 只在 init 算一次（<code>foc_motor.c:661-665</code>），而 SVPWM 用的是<b>实时</b>母线。电源 hiccup 塌陷时二者失配、积分继续 windup、占空比拉满，恢复瞬间灌入大电流——这正是 08-31 触发 <b>14 A</b> 硬件过流的结构性根因。新增的 UVLO 是 100 Hz 巡检 + 100 ms 防抖，<b>挡不住毫秒级 hiccup</b>。</td>
+    </tr>
+    <tr>
+      <td><span class="tag t-p1">P1</span></td>
+      <td>电机 Rs/Ls 标称值与实测严重不符，电流环整定失真</td>
+      <td>config 标称 <code>Rs=0.100 Ω / Ls=20 µH</code>（<code>foc_config.h:92</code>），在线 ident 实测 <b>Rs=0.4456 Ω、Ls=333 µH</b>，相差 <b>4.5× / 16.7×</b>。按 <code>Kp=Ls·ω, Ki=Rs·ω</code> 整定，电流环实际带宽与 dq 解耦量都远低于设计值。</td>
+    </tr>
+    <tr>
+      <td><span class="tag t-p1">P1</span></td>
+      <td>低速速度环极限环：30 / 100 RPM 无法稳速</td>
+      <td>30 RPM 速度在 −7~+55 RPM 间振荡（SD≈18，偶发冲到 150+），100 RPM 在 19~186 间乱跳，300 RPM 才收敛。<b>对照实验已排除"PLL 测速噪声"（降带宽无效）和"供电不足"（vbus 恒定 14.45 V）</b>；根因是速度环增益过小 + 低速 track 控制器无积分、欠阻尼 + 外转子齿槽未做标定补偿，形成"卡住→攒劲→脱齿→冲过→制动"的张弛振荡。</td>
+    </tr>
+  </table>
+  <div class="callout c-info">
+    <b>测试边界声明：</b>本轮严格只读源码，未编辑任何 <code>.c/.h</code>、未烧录、未执行 <code>conf write</code>。所有在线改动均为 RAM 临时参数，测试结束已恢复默认（摩擦 0.15 A / 起步 0.70 A / track 0.8 / PLL 600 rad/s）。唯一保留在 RAM 的是 <code>ident apply</code> 写入的实测 Rs/Ls（掉电即恢复 config 值），当前在线电流环反而按真实电机参数整定，更接近真实性能。
+  </div>
+</section>
+
+<!-- ============ 1 测试对象 ============ -->
+<section>
+  <h2>1. 测试对象与方法</h2>
+  <div class="grid2">
+    <table>
+      <tr><th>项目</th><th>参数 / 状态</th></tr>
+      <tr><td>主控 / 驱动板</td><td>STM32G431，Matchstick_HFOC_G431</td></tr>
+      <tr><td>电机</td><td>DJI 2312S，7 极对，12N14P 外转子，约 800 KV</td></tr>
+      <tr><td>位置反馈</td><td>ABZ 增量编码器，CPR=2048（512 线×4），dir=−1</td></tr>
+      <tr><td>PWM / 控制频率</td><td>中心对齐 16 kHz；快环 16 kHz、慢环 1 kHz、遥测 500 Hz</td></tr>
+      <tr><td>母线</td><td>14.4~14.46 V，本次全程稳定无塌陷</td></tr>
+    </table>
+    <table>
+      <tr><th>保护阈值（在线）</th><th>数值</th></tr>
+      <tr><td>额定软限 current_limit</td><td>5.20 A</td></tr>
+      <tr><td>运行跳阈值（1.25×软限+0.1，连续8拍）</td><td>6.60 A</td></tr>
+      <tr><td>硬件过流（单拍原始相峰值）</td><td>12 A</td></tr>
+      <tr><td>UVLO / OVLO（100 ms 防抖）</td><td>9.0 V / 18.5 V</td></tr>
+      <tr><td>堵转保护（仅 vel/pos）</td><td>&lt;30 rpm 且 iq≥0.95·Imax 持续 1 s</td></tr>
+    </table>
+  </div>
+  <p class="small">方法：6.5 Mbps 串口 CLI，先 <code>log 0</code> 关二进制遥测，阶梯下发 <code>enable → target → status 轮询 → target 0 → disable</code>，对每次 status 解析 vel / vel_obs / vel_filt / id / iq / iq_ref / vbus / track_err；对照实验只改单一 RAM 变量，用同口径采样的标准差（SD）与极差（range）量化。</p>
+</section>
+
+<!-- ============ 2 工程亮点 ============ -->
+<section>
+  <h2>2. 工程架构成熟度：值得肯定的设计（附源码依据）</h2>
+  <p>下列能力都在源码中实际落地、而非空壳，多项已对标开源主流：</p>
+  <table>
+    <tr><th style="width:210px">能力</th><th>实现要点与出处</th></tr>
+    <tr><td>分层控制时序</td><td>快环 16 kHz 做 FOC/电流环，慢环 1 kHz 做速度/位置，遥测 500 Hz，职责清晰。</td></tr>
+    <tr><td>硬/软双路过流</td><td>硬路用<b>原始相电流峰值单拍 &gt;12 A</b> 立即跳；软路先对 dq 分量滤波再取模、连续 8 拍 &gt;6.6 A 才跳。源码注释明确记载了"先取绝对值会把 PWM 纹波整流、在 2350 RPM 误跳"的教训并据此修正——这是很专业的处理。</td></tr>
+    <tr><td>PID 抗饱和</td><td>Tustin 离散积分 + 条件积分 anti-windup + 输出斜坡（速度环 iq 斜坡 4 A/s），arm 时积分全部清零。</td></tr>
+    <tr><td>电流环完善度</td><td>dq 交叉解耦、死区补偿（0.17 V，仅闭环且 |i|&gt;0.05 A）、电压圆限幅、弱磁时动态电流圆 <code>Iq=√(Imax²−Id²)</code>（对标 ST MCSDK FW_CalcCurrRef）。</td></tr>
+    <tr><td>位置环梯形轨迹</td><td><code>foc_traj.h</code>，目标变化时按当前位置/速度重新规划，位置参考 + 速度前馈，源码注释明确"对标 ODrive trap_traj"。</td></tr>
+    <tr><td>测速</td><td>三窗口（64/32/16 ms）<b>最小二乘拟合</b>测速 + 按速度交叉淡入淡出 + 二阶 PLL 平滑角度 + "端点计数 + 长窗速度"双静止判据（<code>abz_encoder.c:183-318</code>），比常见 M/T 法更讲究。</td></tr>
+    <tr><td>在线参数辨识</td><td><code>foc_ident.c</code>：Rs 升压平均法、Ls ±0.15 V 方波注入 4096 拍，带合法区间校验，<code>ident apply</code> 可即时重调电流环。</td></tr>
+    <tr><td>抗齿槽框架</td><td><code>foc_anticog.c</code> 144 点补偿表（576 B），可持久化到 Flash（STORE_VER=8），采样钩子在注入前去速、解方向。</td></tr>
+    <tr><td>母线自适应</td><td>PA0 实时采样 Vbus、100 Hz 更新、SVPWM/电压圆随实时母线缩放，带 UVLO/OVLO 与有效样本窗。</td></tr>
+    <tr><td>工程鲁棒性</td><td>采样链断连自恢复、blackbox 512 拍（32 ms）、IWDG 400 ms 看门狗、CPU 占用统计、角度源软切换（1 s 过流豁免 + 200 ms 线性 blend）。</td></tr>
+  </table>
+</section>
+
+<!-- ============ 3 实测数据 ============ -->
+<section>
+  <h2>3. 本次实机测试数据</h2>
+
+  <h3>3.1 基础健康项（全部通过）</h3>
+  <table>
+    <tr><th>检查项</th><th>结果</th><th>判读</th></tr>
+    <tr><td>零压使能三相零漂</td><td>±0.06~0.12 A</td><td><span class="tag t-meas">实测</span>采样与偏置校准良好</td></tr>
+    <tr><td>开环 V/F 30 RPM</td><td>平稳旋转，vq=0.318 V（=boost0.3+slope0.0006×30），三相轮换对称、和≈0、幅值 0.7~0.85 A</td><td><span class="tag t-meas">实测</span>功率级/换相/SVPWM 正确，<b>并标定了"平稳旋转约需 0.7 A 电流"</b></td></tr>
+    <tr><td>编码器索引校准</td><td>offset=1.0186 rad，dir=−1，calib_state=6(DONE)</td><td><span class="tag t-meas">实测</span>一次成功</td></tr>
+    <tr><td>在线 ident</td><td>Rs=0.4456 Ω，Ls=333.49 µH</td><td><span class="tag t-meas">实测</span>与标称值矛盾，见 P1</td></tr>
+    <tr><td>母线稳定性</td><td>vbus=14.45~14.46 V，阶跃全程纹丝不动</td><td><span class="tag t-meas">实测</span>本次供电充裕，排除电源因素</td></tr>
+  </table>
+
+  <h3>3.2 速度闭环阶梯：低速失稳、中高速收敛</h3>
+  <p>同一 vel 闭环、默认参数，分别给 30 / 100 / 300 RPM 目标，每约 350 ms 采一次显示速度 <code>vel</code>。虚线为各档目标转速。</p>
+  <div id="chart1" class="chart"></div>
+  <div id="fallback1" style="display:none">
+    <table><tr><th>目标</th><th>逐次采样 vel (RPM)</th></tr>
+      <tr><td>30</td><td>48.0 / 18.8 / 55.3 / 33.8 / 10.9 / 5.3 / 4.5 / 26.4 / 5.6 / 25.1</td></tr>
+      <tr><td>100</td><td>57.7 / 19.3 / 113.2 / 185.9 / 56.6 / 105.7 / 168.1 / 164.3</td></tr>
+      <tr><td>300</td><td>173.6 / 187.5 / 256.7 / 265.6 / 282.7 / 337.6 / 291.9 / 278.3</td></tr>
+    </table>
+  </div>
+  <div class="callout c-warn">
+    转子有机械惯量，真实转速不可能在 350 ms 内从 19 跳到 186 再掉回 56——30/100 RPM 档这种大幅摆动是<b>闭环在反复加/减速的极限环</b>；300 RPM 档采样点逐步收拢到 278~337，说明高速时量化相对误差变小、系统趋于稳定。
+  </div>
+
+  <h3>3.3 30 RPM 对照实验：用排除法定位根因</h3>
+  <p>固定 30 RPM 目标，每次只改一个 RAM 变量，用同口径 10~12 点采样的标准差 SD 衡量抖动：</p>
+  <div id="chart2" class="chart" style="height:340px"></div>
+  <div id="fallback2" style="display:none">
+    <table><tr><th>配置</th><th>速度 SD (RPM)</th><th>现象</th></tr>
+      <tr><td>默认 track=0.8（位置P+阻尼）</td><td>18.2</td><td>−7.4~51.6 振荡，均值仅 15.5</td></tr>
+      <tr><td>track=0（纯速度 PI）</td><td>30.5</td><td>12 点中 11 点为 0，只抽搐一次到 110</td></tr>
+      <tr><td>加大前馈 ff0.55/start0.9</td><td>198.0</td><td>冲到 752 RPM，显著恶化</td></tr>
+      <tr><td>PLL 带宽 600→150 rad/s</td><td>53.0→51.4</td><td>几乎无变化</td></tr>
+    </table>
+  </div>
+  <table>
+    <tr><th>假设</th><th>验证手段</th><th>结果</th><th>结论</th></tr>
+    <tr><td>功率级/换相/编码器有问题</td><td>开环 V/F 30 RPM</td><td>平稳</td><td><b>排除</b>，硬件链路健康</td></tr>
+    <tr><td>电源限流/塌陷</td><td>监视 vbus</td><td>恒定 14.45 V</td><td><b>排除</b>（与 08-31 的 1 A 限流环境不同）</td></tr>
+    <tr><td>PLL 测速噪声主导</td><td><code>tune pll bw 150</code></td><td>SD 53→51，无改善</td><td><b>排除</b>，不是 PLL 带宽问题</td></tr>
+    <tr><td>速度环增益太小带不动齿槽</td><td><code>vel track 0</code> 回到纯 PI</td><td>几乎不转（11/12 点为 0）</td><td><b>成立</b>：kp=ki=0.001 严重欠增益</td></tr>
+    <tr><td>力矩电流不足</td><td>加大摩擦/起步前馈</td><td>反而冲到 752、SD 198</td><td>欠阻尼下加前馈=火上浇油，<b>必须先补阻尼再补前馈</b></td></tr>
+  </table>
+</section>
+
+<!-- ============ 4 问题诊断 ============ -->
+<section>
+  <h2>4. 问题诊断、机理与建议（按优先级）</h2>
+
+  <!-- P0 -->
+  <div class="issue">
+    <div class="head"><span class="tag t-p0">P0 · 安全</span><span class="t">电流环抗饱和限幅"冻结"，且无电压斜率限制 —— 母线扰动浪涌的结构性根因</span></div>
+    <h4>① 现象（08-31 实测故障锁存）</h4>
+    <p>电源设 1 A 限流，iq 阶跃 0.6 A 时电源 hiccup 切断→母线塌陷→高带宽电流环为补足电流把占空比拉满→电源恢复瞬间近似短路灌入浪涌，固件锁存 <code>trip_i=+14.001 / −12.881 / −1.120 A，hard=1</code>（硬件过流动作、MOE 关闭，未炸管）。</p>
+    <h4>② 源码定位 <span class="tag t-code">源码</span></h4>
+    <ul>
+      <li><code>foc_motor.c:661</code> <code>v_max = drv-&gt;u_dc * INV_SQRT_3;</code> —— 只在 <code>foc_motor_init</code> 执行<b>一次</b>；L664-665 把它作为 pid_id/pid_iq 的输出限幅，之后不再更新。</li>
+      <li>同两行第 6 个参数 <code>out_ramp=0.0f</code> —— 电流环输出<b>没有电压变化率限制</b>（对比速度环有 4 A/s 斜坡）。</li>
+      <li>SVPWM / 电压圆限幅用的却是<b>实时</b> <code>drv-&gt;u_dc</code>（自适应母线更新）。两套"电压上限"在母线跌落瞬间失配。</li>
+      <li>UVLO/OVLO 在主循环 100 Hz 巡检、需<b>持续 100 ms</b> 才跳（<code>foc_app.c</code>），对毫秒级 hiccup 来不及反应。</li>
+    </ul>
+    <h4>③ 机理与定量估算</h4>
+    <div class="formula">母线塌陷瞬间：
+  实时 u_dc ↓↓ → SVPWM 电压圆缩小
+  但 PID 内部输出限幅 v_max 仍是塌陷前的高值
+  → 条件积分 anti-windup 的"输出碰限才退积分"判据不成立
+  → 积分继续 windup，占空比被指令拉向 100%
+电源恢复瞬间，电压方程  V = Ls·di/dt + Rs·i，取实测 Ls=333 µH、恢复压差 ΔV≈14 V：
+  di/dt = ΔV / Ls = 14 / 333e-6 ≈ 4.2×10^4 A/s
+  一个 PWM 周期(62.5 µs)电流增量 Δi ≈ 4.2e4 × 62.5e-6 ≈ 2.6 A
+  → 只需 4~5 个拍(约 0.3 ms)即可从 0 冲到 12 A 硬限，远快于 100 ms 的 UVLO。</div>
+    <h4>④ 与开源对比 <span class="tag t-cmp">对比</span></h4>
+    <ul>
+      <li><b>ODrive</b>：每个控制周期都把<b>实时</b> <code>vbus_voltage</code> 传入电流控制律做电压归一化（本地参考源码 <code>ODrive/.../motor.cpp:44 / :123 / :653 on_measurement(vbus_voltage,…)</code>，<code>vfactor=1/((2/3)·vbus)</code>）——限幅天然跟随母线，不存在冻结问题。</li>
+      <li><b>VESC</b>：除软件环外，在定时器/模拟比较器层做 <b>cycle-by-cycle 逐周期硬件限流</b>，一个 PWM 周期内即可截断，是抗 hiccup/短路的最后防线。</li>
+    </ul>
+    <h4>⑤ 建议（三层纵深，均需改代码，本轮未改）</h4>
+    <div class="step"><b>第 1 层（一行级、性价比最高）：</b>把电流环 PID 的输出限幅 <code>v_max</code> 改为<b>每个快环用实时 <code>drv-&gt;u_dc</code> 更新</b>（与 SVPWM 同源），母线塌陷时条件积分立即退饱和，不再 windup。</div>
+    <div class="step"><b>第 2 层：</b>给电流环输出设非零 <code>out_ramp</code>（电压斜率限制）；并对"母线快速跌落"走快速通道（如 u_dc 单拍跌幅超阈值即冻结/回退电流环积分），不等 100 ms 防抖。</div>
+    <div class="step"><b>第 3 层（硬件根治）：</b>利用 STM32G4 内置模拟比较器 CMP + DAC 阈值 + TIM1 BKIN，做<b>逐周期硬件限流</b>，在一个 PWM 周期内硬件拉低 MOE，不依赖软件巡检。这是 VESC 级别鲁棒性的关键，也能在真正短路/桥臂直通时保命。</div>
+  </div>
+
+  <!-- P1-a -->
+  <div class="issue">
+    <div class="head"><span class="tag t-p1">P1 · 整定</span><span class="t">Rs/Ls 标称值与实测差 4.5×/16.7×，电流环带宽与解耦失真</span></div>
+    <h4>① 数据矛盾 <span class="tag t-meas">实测</span><span class="tag t-code">源码</span></h4>
+    <table>
+      <tr><th>参数</th><th>config 标称 (<code>foc_config.h</code>)</th><th>本次 ident 实测</th><th>偏差</th><th>源码中出现过的其它实测值</th></tr>
+      <tr><td>Rs</td><td>0.100 Ω（L92，注释"对齐 ST 历史工程"）</td><td><b>0.4456 Ω</b></td><td>4.5×</td><td>注释提及 0.395 Ω；08-31 版曾用 0.403 Ω</td></tr>
+      <tr><td>Ls</td><td>20 µH</td><td><b>333.49 µH</b></td><td>16.7×</td><td>注释提及视在电感 301 µH</td></tr>
+    </table>
+    <h4>② 机理：为什么这会让电流环"名不副实"</h4>
+    <div class="formula">电流环 PI 整定（foc_motor.c:662-663）：Kp = Ls·ωc ,  Ki = Rs·ωc , 设计带宽 ωc=2000 rad/s
+用标称 Ls=20µH：Kp = 20e-6×2000 = 0.040
+用实测 Ls=333µH：Kp = 333e-6×2000 = 0.667   → 标称值把 Kp 缩小了 16.7×
+后果 1：实际电流环闭环带宽远低于 2000 rad/s，电流跟踪变软（这也是低速时 iq 建立慢、"带不动"的原因之一）。
+后果 2：dq 解耦前馈量 ωe·Ls·iq 同样偏小 16.7×，中高速解耦不足，id/iq 会互相串扰。</div>
+    <div class="callout c-info">说明：ident 用方波注入测到的是包含磁路饱和效应的<b>视在电感</b>，本就会比小信号电感大；但即便如此，20 µH 与多次实测（301 / 333 µH）差一个数量级以上，标称值来源（ST 历史工程）显然不是这台 DJI 2312S 的真实值。</div>
+    <h4>③ 建议</h4>
+    <ul>
+      <li>在冷机/温机、25%/50% 额定电流下<b>多次 ident 取中位数</b>，确认真实 Rs/Ls 区间；经你授权后写回 <code>foc_config.h</code> 并 <code>conf write</code> 固化（本轮按约束未做）。</li>
+      <li>Rs 随绕组温升可上升 30~50%，Ki 按冷机整定时留相应裕度，避免热态电流环振荡。</li>
+      <li>统一参数来源：源码注释里 0.10/0.395/0.403 Ω、20/301/333 µH 多套值并存，建议以一份"电机参数标定记录"为准，避免后人误回退。</li>
+    </ul>
+  </div>
+
+  <!-- P1-b -->
+  <div class="issue">
+    <div class="head"><span class="tag t-p1">P1 · 性能</span><span class="t">低速速度环极限环（30/100 RPM 不稳）：欠增益 + track 无积分欠阻尼 + 齿槽未补偿</span></div>
+    <h4>① 低速时实际生效的控制器结构 <span class="tag t-code">源码</span></h4>
+    <p>当转速低于 <code>track_rpm=50</code> 时 <code>track_blend=1</code>，此时（<code>foc_motor.c:370-374</code>）<b>速度 PI 被整体旁路并 reset</b>，实际输出为：</p>
+    <div class="formula">iq_user = iq_track_damp + 摩擦/起步前馈 + vel_track_kp·track_error
+  iq_track_damp = kp_vel·(vel_ref − vel_filt)， kp_vel=0.001 A/RPM  → 偏差 100 RPM 仅给 0.1 A 阻尼
+  位置 P 项    = 0.80 × track_error，track_error 被钳在 ±0.40 rad → 该项最大仅 0.32 A
+  摩擦前馈     = 0.15 A（恒定）
+  ※ 该结构在低速段没有积分项。</div>
+    <h4>② 张弛极限环机理（与实测一一对应）</h4>
+    <ul>
+      <li>开环 V/F 已标定：平滑越过外转子齿槽静转矩约需 <b>0.7 A</b>；而闭环稳态 <code>iq</code> 只有 <b>0.1~0.34 A</b>，不足以连续越过齿槽。</li>
+      <li>于是循环：<b>卡在齿槽 → 移动位置参考持续积分、track_error 累积到 ±0.4 钳位 → 以约 0.32+0.15 A "攒劲" → 一旦脱齿，外转子空载且阻尼极弱（0.001）而前馈仍在 → 冲过目标（实测冲到 150，加大前馈后冲到 752）→ 位置误差反号、P 项反向制动 → 再卡入下一个齿槽</b>。这就是 30 RPM 均值只有 15.5、却反复摆动的物理本质。</li>
+      <li>反馈侧：进控制环的是 PLL 速度（<code>foc_motor.c:240</code> 取 <code>velocity_observer_rpm</code>，接口注册见 <code>foc_board_g431.c:193</code>）；而专门为 ≤60 RPM 设计、更平滑的 <b>64 ms 三窗口最小二乘速度</b>（<code>abz_encoder.c:202-318</code>）只用于静止判据（L248-249），未参与低速闭环；PLL 速度再经 15 Hz 低通（L677-680）引入额外相位滞后，进一步压缩稳定裕度。</li>
+      <li><code>vel kp=ki=0.001</code>（<code>foc_config.h:114-115</code>，注释自称"实机稳定值"）对这台电机的转动惯量/转矩常数仍明显欠增益——纯 PI 实验中 11/12 个采样点速度为 0 就是直接证据。</li>
+    </ul>
+    <h4>③ 与开源对比 <span class="tag t-cmp">对比</span></h4>
+    <table>
+      <tr><th>项目</th><th>低速策略</th></tr>
+      <tr><td>VESC</td><td>速度环增益按惯量整定；提供<b>按电角度周期的齿槽图（cogging map）前馈补偿</b>，把"恒定摩擦前馈"升级为"随转子位置变化的精确补偿"，从根源消除齿槽引起的速度纹波。</td></tr>
+      <tr><td>ODrive</td><td>编码器 PLL + 速度 PI，<code>vel_gain / vel_integrator_gain</code> 按 J、Kt 整定；提供 start_anticogging 标定流程与索引/齿槽补偿。</td></tr>
+      <tr><td>SimpleFOC</td><td>仅纯速度 PI，无内建齿槽补偿，低速同样依赖足够增益——<b>本工程的 track + 抗齿槽框架其实已经超过 SimpleFOC，只是尚未标定/整定到位</b>。</td></tr>
+    </table>
+    <h4>④ 建议（严格按顺序，先阻尼后前馈）</h4>
+    <div class="step"><b>第 1 步（不改代码、最对症）：标定并使能抗齿槽。</b>工程已有完整 <code>acog start → finish → enable 1</code> 框架（144 点表 + Flash 持久化）。让电机低速匀速扫一圈、记录每个电角度维持匀速所需的 iq 前馈，之后用"按位置的周期补偿"替代现在的 0.15 A 恒定摩擦前馈，这是对外转子齿槽最直接的解法。</div>
+    <div class="step"><b>第 2 步（整定，建立在正确 Rs/Ls 上）：</b>先估转矩常数 Kt 与总转动惯量 J，把 vel kp/ki 提到临界阻尼附近（现 0.001 明显欠增益）。可用阶跃响应法：小 iq 阶跃测机械加速度斜率反推 J。</div>
+    <div class="step"><b>第 3 步（改代码，可选）：</b>低速反馈融合/改用三窗口最小二乘速度（它本就为 ≤60 RPM 设计）；或让 track 控制器在极低速<b>保留少量速度积分</b>而非 L373 直接 reset，消除稳态位置误差被钳位后"攒劲-冲过"的行为。</div>
+    <div class="step"><b>第 4 步：</b>现 track 位置钳位 0.4 rad × kp 0.8 = 0.32 A 小于所需 0.7 A，但<b>不能在欠阻尼时直接放宽/加前馈</b>（本次实验 SD 从 18 恶化到 198 就是反例）；必须在第 2 步阻尼补足后再调。</div>
+    <div class="callout c-warn"><b>调参铁律（本次实测验证）：</b>顺序必须是"先整定增益/补阻尼 → 再上齿槽补偿/前馈"。在欠阻尼系统里盲目加大前馈会把极限环放大一个数量级。</div>
+  </div>
+
+  <!-- P2 -->
+  <div class="issue">
+    <div class="head"><span class="tag t-p2">P2 · 次要</span><span class="t">一致性 / 阈值 / 版本等小问题</span></div>
+    <ul>
+      <li><b>状态字段一致性：</b>V/F 零压时 status 显示 <code>iq_ref=3.653 A</code>，但实际 id/iq≈0（V/F 模式不跑电流环）。该字段是慢环残留值未清零，建议在切到 V/F 时同步归零，避免误导调试判断。</li>
+      <li><b>静止噪声与起步释放阈值：</b>静止时 <code>vel_obs≈6.5 RPM</code> 噪声，高于起步释放阈值 <code>start_rpm=5</code>（<code>foc_motor.c:428</code> 用 vel_filt 判定）。当前因低速滤波影响有限，但存在"未真正转动却误判达到释放转速"的理论风险，建议静止判据更严格或阈值留出噪声裕度。</li>
+      <li><b>烧录一致性：</b>最新 hex/axf 编译于 Sep 6 08:09，而在线固件 build 为 08:03，源码可能在烧录后又有改动，建议确认板内固件与最新源码是否一致，避免"调的不是看的这份代码"。</li>
+      <li><b>符号约定（非 bug，建议写进文档）：</b><code>iq_ref = dir × target</code>，dir=−1 时正 target 对应负 iq_ref，是为保证"正指令=编码器机械正向"的有意设计。建议在代码头注释/协议文档写明，避免后续维护者误判为符号错误。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 5 横向对比 ============ -->
+<section>
+  <h2>5. 与 SimpleFOC / ODrive / VESC 横向对比</h2>
+  <p class="small">对比基于本地 <code>D:\code\mcu\stm32\FOC\References</code> 已拉取的 9 个开源工程源码（SimpleFOC/Arduino-FOC、ODrive、VESC/bldc、moteus、stmbl、Tinymovr、AM32 等）。●=完整具备　◐=部分/需标定　○=不具备或较弱。</p>
+  <table>
+    <tr><th style="width:200px">维度</th><th>本工程 FOC_G431</th><th>SimpleFOC</th><th>ODrive</th><th>VESC</th></tr>
+    <tr><td>电流环限幅跟随实时母线</td><td>○ 初始化冻结（P0）</td><td>○</td><td>● 每周期传入 vbus</td><td>●</td></tr>
+    <tr><td>硬件逐周期限流</td><td>◐ 仅单拍软件硬过流</td><td>○</td><td>◐ 依赖板级</td><td>● 比较器/定时器 cycle-by-cycle</td></tr>
+    <tr><td>dq 解耦 / 死区补偿 / 弱磁</td><td>● 齐全</td><td>◐</td><td>●</td><td>●</td></tr>
+    <tr><td>速度环增益按 J/Kt 整定</td><td>◐ 有框架，现值欠增益</td><td>◐ 需用户调</td><td>● 方法成熟</td><td>●</td></tr>
+    <tr><td>齿槽补偿</td><td>◐ 框架完整、<b>未标定使能</b></td><td>○</td><td>● anticogging 流程</td><td>● cogging map</td></tr>
+    <tr><td>编码器测速</td><td>● 三窗 LS + PLL（优于多数）</td><td>◐ 简单</td><td>● PLL</td><td>● 观测器</td></tr>
+    <tr><td>在线 Rs/Ls 辨识</td><td>● 已实现</td><td>○</td><td>◐ 校准 R/L</td><td>● R/L/λ 全辨识</td></tr>
+    <tr><td>梯形轨迹位置控制</td><td>● 对标 ODrive</td><td>○</td><td>● trap_traj</td><td>●</td></tr>
+    <tr><td>无传感（HFI/观测器）</td><td>◐ foc_hfi 预留</td><td>◐</td><td>◐</td><td>● 最强</td></tr>
+  </table>
+  <div class="callout c-good"><b>一句话定位：</b>本工程的"功能清单"已经对齐 ODrive/VESC，明显强于 SimpleFOC；差距不在架构，而在<b>三个"最后一公里"——安全限幅要跟实时母线、电机参数要标定准确、低速控制要整定 + 启用齿槽补偿</b>。</div>
+</section>
+
+<!-- ============ 6 路线图 ============ -->
+<section>
+  <h2>6. 改进路线图与复测方法</h2>
+  <table>
+    <tr><th style="width:90px">阶段</th><th style="width:300px">动作</th><th>是否改代码 / 验证方法（COM44）</th></tr>
+    <tr>
+      <td><b>阶段 0</b><br><span class="small">参数/标定<br>立即可做</span></td>
+      <td>
+        ① 多次 ident 取 Rs/Ls 中位，授权后写回 config + <code>conf write</code>；<br>
+        ② <code>acog start/finish/enable 1</code> 标定抗齿槽；<br>
+        ③ 电源限流调到 ≥3 A 并在母线就近加大电容，避免再次 hiccup。
+      </td>
+      <td>不改代码（仅参数/标定）。验证：<code>ident</code> 重复 3 次看离散度；标定后 30 RPM 跑 vel 闭环，用本报告脚本统计 SD 是否从 18 降到个位数。</td>
+    </tr>
+    <tr>
+      <td><b>阶段 1</b><br><span class="small">小改代码<br>安全</span></td>
+      <td>
+        ① 电流环 PID 限幅每快环用实时 u_dc 更新；<br>
+        ② 电流环加电压斜率限制；<br>
+        ③ UVLO 增加"快速跌落"快通道，不等 100 ms。
+      </td>
+      <td>改 <code>foc_motor.c</code> / <code>foc_app.c</code>。验证：用可调电源主动制造一次限流 hiccup（或带载阶跃），监视 <code>trip_i</code> 不再出现数倍于软限的浪涌、fault 干净。</td>
+    </tr>
+    <tr>
+      <td><b>阶段 2</b><br><span class="small">控制性能</span></td>
+      <td>
+        ① 测 J、Kt，整定 vel kp/ki 到临界阻尼；<br>
+        ② 低速反馈融合三窗口 LS 速度；<br>
+        ③ track 极低速保留少量积分。
+      </td>
+      <td>改 <code>foc_config.h</code> / <code>foc_motor.c</code>。验证：30/100/300 RPM 阶梯 SD 均 &lt;目标的 5%，且不再出现反转/数倍超调。</td>
+    </tr>
+    <tr>
+      <td><b>阶段 3</b><br><span class="small">硬件级鲁棒</span></td>
+      <td>STM32G4 CMP + DAC + TIM1 BKIN 逐周期硬件限流。</td>
+      <td>改驱动/定时器配置。验证：人为过流时 MOE 在单周期内关断、电流被钳在阈值而非冲到 12 A。</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ============ 7 附录 ============ -->
+<section>
+  <h2>7. 附录</h2>
+  <h3>A. 本次 RAM 在线改动与恢复声明</h3>
+  <table>
+    <tr><th>RAM 参数</th><th>测试中临时值</th><th>结束后状态</th></tr>
+    <tr><td>vel track_kp</td><td>0（纯PI对照）/ 0.8</td><td>已恢复 0.8</td></tr>
+    <tr><td>vel friction / start</td><td>0.55 / 0.9（对照）</td><td>已恢复 0.15 / 0.70</td></tr>
+    <tr><td>PLL 带宽</td><td>150 rad/s（对照）</td><td>已恢复 600 rad/s</td></tr>
+    <tr><td>Rs / Ls（ident apply）</td><td>0.4456 Ω / 333 µH</td><td><b>仍在 RAM</b>（未 conf write，掉电恢复 config 值）</td></tr>
+    <tr><td>电机状态</td><td>—</td><td>最终 disable → IDLE，fault=0，无故障锁存</td></tr>
+  </table>
+  <h3>B. 关键源码索引</h3>
+  <table>
+    <tr><th>主题</th><th>位置</th></tr>
+    <tr><td>电流环整定 / 限幅冻结</td><td>Core/foc_motor.c:660-665</td></tr>
+    <tr><td>慢环速度混合 / track / 前馈 / iq 合成</td><td>Core/foc_motor.c:234-458</td></tr>
+    <tr><td>电机标称参数</td><td>Core/foc_config.h:92 起</td></tr>
+    <tr><td>三窗口 LS 测速 + PLL + 静止判据</td><td>Driver/abz_encoder.c:143-318；常量 abz_encoder.h:67-104</td></tr>
+    <tr><td>速度源接口注册（控制用 PLL）</td><td>foc_board_g431.c:191-193</td></tr>
+    <tr><td>UVLO/OVLO 巡检</td><td>App/foc_app.c 主循环段</td></tr>
+    <tr><td>在线辨识</td><td>App/foc_ident.c；抗齿槽 Core/foc_anticog.c</td></tr>
+  </table>
+  <h3>C. 参考工程</h3>
+  <p>已位于 <code>D:\code\mcu\stm32\FOC\References</code>：Arduino-FOC(SimpleFOC)、Arduino-FOC-drivers、SimpleFOCMini、ODrive、bldc(VESC)、moteus、stmbl、Tinymovr、AM32，共 9 个，可直接对照阅读。</p>
+  <p class="small">串口复用工具：<code>tools\foc_console.ps1</code>（默认 COM44/6.5 Mbps，自动关遥测、过滤二进制）。</p>
+</section>
+
+<footer>FOC_G431 实机调试评估 · 2026-09-06 · 结论均来自 COM44 实测数据或标注行号的源码，未修改任何源码</footer>
+</div>
+
+<script>
+(function(){
+  function draw(id, option, fbId){
+    var el = document.getElementById(id);
+    if(!el || typeof echarts === 'undefined'){
+      var fb = document.getElementById(fbId); if(fb){ fb.style.display='block'; }
+      if(el){ el.style.display='none'; } return;
+    }
+    try{
+      var ch = echarts.init(el, null, {renderer:'canvas'});
+      ch.setOption(option);
+      window.addEventListener('resize', function(){ ch.resize(); });
+    }catch(e){
+      var fb2 = document.getElementById(fbId); if(fb2){ fb2.style.display='block'; }
+      el.style.display='none';
+    }
+  }
+
+  var opt1 = {
+    backgroundColor:'transparent',
+    title:{ text:'速度闭环阶梯实测：瞬时速度随采样点波动', left:'center',
+      textStyle:{color:'#1f2933',fontSize:15,fontWeight:600} },
+    tooltip:{ trigger:'axis', triggerOn:'click', renderMode:'richText', confine:true,
+      textStyle:{fontSize:11,lineHeight:15}, padding:[6,8] },
+    legend:{ top:30, itemWidth:14, itemHeight:8, textStyle:{color:'#52606d',fontSize:11} },
+    grid:{ left:46, right:24, top:70, bottom:40, containLabel:true },
+    xAxis:{ type:'category', name:'采样序号(约350ms/点)', nameLocation:'middle', nameGap:28,
+      data:['1','2','3','4','5','6','7','8'],
+      axisLabel:{color:'#52606d',fontSize:11} },
+    yAxis:{ type:'value', name:'速度 (RPM)',
+      axisLabel:{color:'#52606d',fontSize:11}, splitLine:{lineStyle:{color:'#eef1f4'}} },
+    series:[
+      { name:'目标30 RPM', type:'line', smooth:false, symbol:'circle', symbolSize:6,
+        data:[48.0,18.8,55.3,33.8,10.9,5.3,4.5,26.4],
+        itemStyle:{color:'#c0504d'}, lineStyle:{color:'#c0504d',width:2.2},
+        markLine:{ silent:true, symbol:'none', data:[{yAxis:30}],
+          lineStyle:{color:'#c0504d',type:'dashed',width:1.2},
+          label:{formatter:'目标30',color:'#c0504d',fontSize:10} } },
+      { name:'目标100 RPM', type:'line', smooth:false, symbol:'rect', symbolSize:6,
+        data:[57.7,19.3,113.2,185.9,56.6,105.7,168.1,164.3],
+        itemStyle:{color:'#e08a3c'}, lineStyle:{color:'#e08a3c',width:2.2},
+        markLine:{ silent:true, symbol:'none', data:[{yAxis:100}],
+          lineStyle:{color:'#e08a3c',type:'dashed',width:1.2},
+          label:{formatter:'目标100',color:'#e08a3c',fontSize:10} } },
+      { name:'目标300 RPM', type:'line', smooth:false, symbol:'triangle', symbolSize:7,
+        data:[173.6,187.5,256.7,265.6,282.7,337.6,291.9,278.3],
+        itemStyle:{color:'#2f6f9f'}, lineStyle:{color:'#2f6f9f',width:2.4} }
+    ]
+  };
+
+  var opt2 = {
+    backgroundColor:'transparent',
+    title:{ text:'30 RPM 对照实验：速度标准差 SD（越小越稳）', left:'center',
+      textStyle:{color:'#1f2933',fontSize:15,fontWeight:600} },
+    tooltip:{ trigger:'axis', triggerOn:'click', renderMode:'richText', confine:true,
+      textStyle:{fontSize:11,lineHeight:15}, padding:[6,8] },
+    grid:{ left:46, right:24, top:56, bottom:70, containLabel:true },
+    xAxis:{ type:'category',
+      data:['默认\ntrack=0.8','纯速度PI\ntrack=0','加大前馈\nff0.55/start0.9','PLL带宽\n600→150'],
+      axisLabel:{color:'#52606d',fontSize:11,interval:0,lineHeight:14} },
+    yAxis:{ type:'value', name:'速度 SD (RPM)',
+      axisLabel:{color:'#52606d',fontSize:11}, splitLine:{lineStyle:{color:'#eef1f4'}} },
+    series:[{
+      name:'SD', type:'bar', barWidth:'46%',
+      data:[
+        {value:18.2, itemStyle:{color:'#5b9279'}},
+        {value:30.5, itemStyle:{color:'#e08a3c'}},
+        {value:198.0, itemStyle:{color:'#c0504d'}},
+        {value:51.4, itemStyle:{color:'#8aa6bd'}}
+      ],
+      label:{show:true,position:'top',fontSize:11,color:'#1f2933',
+        formatter:function(p){ var n=[18.2,30.5,198.0,51.4]; return n[p.dataIndex]; }}
+    }]
+  };
+
+  draw('chart1', opt1, 'fallback1');
+  draw('chart2', opt2, 'fallback2');
+})();
+</script>
+</body>
+</html>

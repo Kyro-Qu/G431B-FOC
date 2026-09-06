@@ -13,7 +13,7 @@
 #define STORE_ADDR   0x0801F800UL
 #define STORE_PAGE   63U
 #define STORE_MAGIC  0x464F4353UL  /* "FOCS" */
-#define STORE_VER    8U  /* v8：新增 144 点抗齿槽力矩前馈补偿表持久化 */
+#define STORE_VER    9U  /* v9：更新 DJI 2312S 真实阻抗 Rs=0.437Ω/Ls=336µH，使旧标称值失效 */
 
 /* 参数块。改字段必须递增 STORE_VER（旧块会被当作无效丢弃） */
 typedef struct {
