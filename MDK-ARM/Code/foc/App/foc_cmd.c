@@ -427,7 +427,7 @@ static void cmd_conf_execute(foc_motor_t *m, const char *action)
         return;
     }
 
-    flash_ok = (erase != 0U) ? foc_store_erase() : foc_store_save(m);
+    flash_ok = (erase != 0U) ? foc_store_erase() : foc_store_save(m, (cur_axis == 0U) ? &g_m0_anticog : 0);
     resume_ok = current_shunt_resume();
     if (resume_ok == 0U) {
         foc_cmd_print("err: current sense resume failed\r\n");

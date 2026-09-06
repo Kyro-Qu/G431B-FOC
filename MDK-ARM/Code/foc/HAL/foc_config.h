@@ -70,8 +70,18 @@
 #define FOC_VBUS_LPF_ALPHA             0.10f         /* 慢速一阶滤波系数 */
 #define FOC_VBUS_SAMPLE_INTERVAL_MS    10U           /* 100Hz 慢环采样 */
 #define FOC_VBUS_AUTO_UPDATE_DRV       1U            /* 1: 慢环自动将实时 Vbus 注入控制环；0: 使用固定 FOC_UDC_V */
-#define FOC_VBUS_VALID_MIN_V           7.0f          /* 安全下限 V（低于此值视为掉电/异常，不送入控制环） */
-#define FOC_VBUS_VALID_MAX_V           52.0f         /* 安全上限 V */
+#define FOC_VBUS_VALID_MIN_V           7.0f          /* 安全物理下限 V（低于此值视为未接电/严重异常） */
+#define FOC_VBUS_VALID_MAX_V           52.0f         /* 安全物理上限 V */
+
+/* ---- 母线电压安全阈值与保护（UVLO / OVLO） ----
+ * 欠压保护（防锂电过放）：低于阈值持续指定时间触发 FOC_FAULT_UNDERVOLTAGE
+ * 过压保护（防能量倒灌/MOS击穿）：高于阈值持续指定时间触发 FOC_FAULT_OVERVOLTAGE
+ * 默认适合 3S~4S 锂电池组或 11V~16.8V 可调电源
+ */
+#define FOC_VBUS_PROTECT_ENABLE        1U            /* 1: 启用母线电压欠压/过压保护 */
+#define FOC_VBUS_UNDERVOLT_THRESHOLD_V 9.0f          /* 欠压跳闸门槛 V（如 3S 锂电单节 3.0V 截止） */
+#define FOC_VBUS_OVERVOLT_THRESHOLD_V  18.5f         /* 过压跳闸门槛 V（4S 满电 16.8V + 制动回充裕量） */
+#define FOC_VBUS_FAULT_TIMEOUT_MS      100U          /* 异常持续 100ms 确认跳闸（防电机启停瞬态下冲误报） */
 
 /* ======================== 3. 电机 0 参数（DJI 2312S 实测） ======================== */
 

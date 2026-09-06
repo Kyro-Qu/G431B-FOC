@@ -204,8 +204,11 @@ void foc_app_init(void)
     float stored_offset = 0.0f;
     foc_store_status_t store_st;
 
-    /* 0. Flash 参数加载：有有效存储则覆盖 foc_config.h 默认值 */
-    store_st = foc_store_load(&m0_p, &m0_c, &stored_dir, &stored_offset);
+    /* 0. 结构初始化：先清空齿槽表再读 Flash */
+    foc_anticog_init(&g_m0_anticog);
+
+    /* Flash 参数加载：有有效存储则覆盖 foc_config.h 默认值并还原齿槽表 */
+    store_st = foc_store_load(&m0_p, &m0_c, &stored_dir, &stored_offset, &g_m0_anticog);
 
     /* 1. 电机对象初始化（含电流环带宽自整定） */
     foc_motor_init(&g_foc_motors[0],
@@ -264,7 +267,6 @@ void foc_app_init(void)
     }
 
     g_foc_state_diag = (uint8_t)g_foc_motors[0].state;
-    foc_anticog_init(&g_m0_anticog);
 
     /* 6. 通信：串口命令行 + VOFA 遥测 */
     foc_cmd_init();
@@ -279,10 +281,12 @@ void foc_app_init(void)
 #endif
 
     if (store_st != FOC_STORE_EMPTY) {
-        foc_cmd_print("config loaded from flash%s "
+        foc_cmd_print("config loaded from flash%s%s "
                       "(pp=%.0f Rs=%.4f Ls=%.2fuH)\r\n",
                       (store_st == FOC_STORE_LOADED_CALIB)
                           ? " with calib offset" : "",
+                      (g_m0_anticog.state == FOC_ACOG_READY)
+                          ? " + acog" : "",
                       (double)m0_p.pole_pairs,
                       (double)m0_p.rs_ohm, (double)(m0_p.ls_henry * 1e6f));
     }
@@ -322,6 +326,37 @@ void foc_app_task(void)
      * 1. 快环 SVPWM、电压圆限幅直接基于真实供电计算，消除电源电压波动带来的占空比误差；
      * 2. 弱磁控制环电压目标 v_target 自动按实时母线动态伸缩，高压充分利用、低压提前深去磁。 */
     foc_board_update_driver_vbus(foc_board_get_vbus_v());
+#endif
+
+#if (FOC_VBUS_ENABLE && FOC_VBUS_PROTECT_ENABLE)
+    /* 母线欠压 (UVLO) / 过压 (OVLO) 安全保护（防锂电过放与制动反压击穿）。
+     * 只有在采样稳定生效（完成至少 10 次采样建立稳态）后才参与判定，杜绝启动初期误触发。 */
+    if ((g_foc_vbus_diag.valid != 0U) && (g_foc_vbus_diag.sample_count >= 10U)) {
+        static uint32_t s_uv_start_tick = 0U;
+        static uint32_t s_ov_start_tick = 0U;
+        uint32_t now = HAL_GetTick();
+        float vbus = g_foc_vbus_diag.voltage_v;
+
+        if (vbus < FOC_VBUS_UNDERVOLT_THRESHOLD_V) {
+            if (s_uv_start_tick == 0U) {
+                s_uv_start_tick = now;
+            } else if ((now - s_uv_start_tick) >= FOC_VBUS_FAULT_TIMEOUT_MS) {
+                foc_motor_fault(m0, FOC_FAULT_UNDERVOLTAGE);
+            }
+        } else {
+            s_uv_start_tick = 0U;
+        }
+
+        if (vbus > FOC_VBUS_OVERVOLT_THRESHOLD_V) {
+            if (s_ov_start_tick == 0U) {
+                s_ov_start_tick = now;
+            } else if ((now - s_ov_start_tick) >= FOC_VBUS_FAULT_TIMEOUT_MS) {
+                foc_motor_fault(m0, FOC_FAULT_OVERVOLTAGE);
+            }
+        } else {
+            s_ov_start_tick = 0U;
+        }
+    }
 #endif
 
     /* 校准与参数辨识状态机 */

@@ -13,9 +13,7 @@
 #define STORE_ADDR   0x0801F800UL
 #define STORE_PAGE   63U
 #define STORE_MAGIC  0x464F4353UL  /* "FOCS" */
-#define STORE_VER    7U  /* v7：极对数 6→7（12N14P 实测），旧块 params 内
-                             * 的 pole_pairs=6 会在 load 时覆盖新编译默认，
-                             * 必须使旧存储失效重建成编译默认 */
+#define STORE_VER    8U  /* v8：新增 144 点抗齿槽力矩前馈补偿表持久化 */
 
 /* 参数块。改字段必须递增 STORE_VER（旧块会被当作无效丢弃） */
 typedef struct {
@@ -49,6 +47,11 @@ typedef struct {
     int8_t calib_direction;
     float calib_offset_rad;
 
+    /* 抗齿槽力矩补偿表（144 点，576 字节） */
+    uint8_t has_anticog;
+    uint8_t anticog_enable;
+    float   anticog_table[FOC_ANTICOG_POINTS];
+
     uint32_t crc;              /* 覆盖 crc 字段之前的全部字节 */
 } store_blob_t;
 
@@ -77,7 +80,8 @@ static uint32_t store_crc32(const uint8_t *data, uint32_t len)
 foc_store_status_t foc_store_load(foc_motor_params_t *params,
                                   foc_ctrl_cfg_t *cfg,
                                   int8_t *calib_direction,
-                                  float *calib_offset_rad)
+                                  float *calib_offset_rad,
+                                  foc_anticog_t *ac)
 {
 #if FOC_STORE_ENABLE
     const store_blob_t *s = (const store_blob_t *)STORE_ADDR;
@@ -111,6 +115,12 @@ foc_store_status_t foc_store_load(foc_motor_params_t *params,
     cfg->traj_enable       = s->traj_enable;
     cfg->decouple_enable   = s->decouple_enable;
 
+    if ((ac != 0) && (s->has_anticog != 0U)) {
+        memcpy(ac->table, s->anticog_table, sizeof(ac->table));
+        ac->state = FOC_ACOG_READY;
+        ac->enable = s->anticog_enable;
+    }
+
     if (s->has_calib != 0U) {
         *calib_direction = s->calib_direction;
         *calib_offset_rad = s->calib_offset_rad;
@@ -122,6 +132,7 @@ foc_store_status_t foc_store_load(foc_motor_params_t *params,
     (void)cfg;
     (void)calib_direction;
     (void)calib_offset_rad;
+    (void)ac;
     return FOC_STORE_EMPTY;
 #endif
 }
@@ -166,10 +177,10 @@ static uint8_t store_program(const store_image_t *img)
     return ok;
 }
 
-uint8_t foc_store_save(const foc_motor_t *m)
+uint8_t foc_store_save(const foc_motor_t *m, const foc_anticog_t *ac)
 {
 #if FOC_STORE_ENABLE
-    static store_image_t img;   /* static：栈上省 ~200B，且仅主循环使用 */
+    static store_image_t img;   /* static：栈上省 ~800B，且仅主循环使用 */
 
     if ((m->state == FOC_STATE_RUN) || (m->state == FOC_STATE_CALIB)) {
         return 0U;             /* 页擦除阻塞 CPU ~22ms，不许带电操作 */
@@ -205,11 +216,19 @@ uint8_t foc_store_save(const foc_motor_t *m)
         img.blob.calib_offset_rad = m->calib.electrical_offset_rad;
     }
 
+    /* 抗齿槽力矩补偿表持久化 */
+    if ((ac != 0) && (ac->state == FOC_ACOG_READY)) {
+        img.blob.has_anticog = 1U;
+        img.blob.anticog_enable = ac->enable;
+        memcpy(img.blob.anticog_table, ac->table, sizeof(img.blob.anticog_table));
+    }
+
     img.blob.crc = store_crc32((const uint8_t *)&img.blob,
                                offsetof(store_blob_t, crc));
     return store_program(&img);
 #else
     (void)m;
+    (void)ac;
     return 0U;
 #endif
 }

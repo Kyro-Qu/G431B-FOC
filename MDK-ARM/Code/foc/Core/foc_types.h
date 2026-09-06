@@ -81,7 +81,9 @@ typedef enum {
     FOC_FAULT_NOT_CALIBRATED,     /* 闭环模式要求校准但尚未完成 */
     FOC_FAULT_CONTROL_NAN,        /* 控制环输出出现 NaN（参数/数值异常） */
     FOC_FAULT_STALL,              /* 堵转：电流饱和且转速≈0 持续超时 */
-    FOC_FAULT_BAD_CONFIG          /* 上电参数自检失败（参数非法） */
+    FOC_FAULT_BAD_CONFIG,         /* 上电参数自检失败（参数非法） */
+    FOC_FAULT_UNDERVOLTAGE,       /* 母线欠压：低于安全工作电压持续超时 */
+    FOC_FAULT_OVERVOLTAGE         /* 母线过压：超过安全工作电压持续超时 */
 } foc_fault_t;
 
 /* ========== 硬件抽象接口表 ========== */

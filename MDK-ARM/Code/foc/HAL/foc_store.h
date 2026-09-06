@@ -24,6 +24,7 @@
 #define FOC_STORE_H
 
 #include "../Core/foc_motor.h"
+#include "../App/foc_anticog.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,19 +39,20 @@ typedef enum {
 
 /**
  * @brief 上电加载：校验通过则把存储值覆盖进 params/cfg，
- *        并输出校准偏移（供 foc_app 写进电机对象）
+ *        并输出校准偏移与齿槽表（供 foc_app 写进电机与补偿器对象）
  */
 foc_store_status_t foc_store_load(foc_motor_params_t *params,
                                   foc_ctrl_cfg_t *cfg,
                                   int8_t *calib_direction,
-                                  float *calib_offset_rad);
+                                  float *calib_offset_rad,
+                                  foc_anticog_t *ac);
 
 /**
- * @brief 把轴当前的参数/控制配置/校准结果写入 Flash。
+ * @brief 把轴当前的参数/控制配置/校准结果/抗齿槽表格写入 Flash。
  *        仅在电机 IDLE 时调用（页擦除阻塞 CPU 约 22ms）。
  * @return 1 成功（已回读校验），0 失败
  */
-uint8_t foc_store_save(const foc_motor_t *m);
+uint8_t foc_store_save(const foc_motor_t *m, const foc_anticog_t *ac);
 
 /** 擦除存储（恢复出厂：下次上电用 foc_config.h 默认值） */
 uint8_t foc_store_erase(void);
