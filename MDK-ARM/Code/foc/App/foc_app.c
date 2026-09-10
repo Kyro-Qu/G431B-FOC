@@ -7,6 +7,8 @@
 #include "foc_calib.h"
 #include "foc_cmd.h"
 #include "foc_ident.h"
+#include "foc_sensorless_bench.h"
+#include "foc_angle_manager.h"
 #include "foc_telemetry.h"
 #include "main.h"
 #include "../HAL/foc_board_g431.h"
@@ -281,6 +283,10 @@ void foc_app_init(void)
 #if FOC_WATCHDOG_ENABLE
     foc_board_watchdog_init(FOC_WATCHDOG_TIMEOUT_MS);
 #endif
+
+    /* 8. 无感影子评测平台与角度仲裁管理器初始化 */
+    foc_sensorless_bench_init(&g_foc_motors[0]);
+    foc_angle_mgr_init();
 
     if (store_st != FOC_STORE_EMPTY) {
         foc_cmd_print("config loaded from flash%s%s "

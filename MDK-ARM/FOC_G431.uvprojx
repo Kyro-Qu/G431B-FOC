@@ -804,6 +804,16 @@
               <FilePath>.\Code\foc\App\foc_ident.c</FilePath>
             </File>
             <File>
+              <FileName>foc_sensorless_bench.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Code\foc\App\foc_sensorless_bench.c</FilePath>
+            </File>
+            <File>
+              <FileName>foc_angle_manager.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Code\foc\App\foc_angle_manager.c</FilePath>
+            </File>
+            <File>
               <FileName>foc_anticog.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Code\foc\App\foc_anticog.c</FilePath>

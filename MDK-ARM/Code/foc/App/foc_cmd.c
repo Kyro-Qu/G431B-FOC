@@ -11,6 +11,8 @@
 #include "foc_app.h"
 #include "foc_calib.h"
 #include "foc_ident.h"
+#include "foc_sensorless_bench.h"
+#include "foc_angle_manager.h"
 #include "foc_telemetry.h"
 #include "foc_anticog.h"
 #include "../Core/foc_port.h"
@@ -234,8 +236,7 @@ static void cmd_print_help(void)
         "  vel [kp|ki|filter|lpf|ramp|ff|start|start_rpm <value>]\r\n"
         "  vel [track|track_limit|track_rpm <value>]\r\n"
         "  pos [kp|ki|vkp|accel|vmax <value>]\r\n"
-        "  ident               start Rs+Ls measurement\r\n"
-        "  ident apply         apply latest result\r\n"
+        "  ident [full|rs|pp|flux|show|apply] param identification\r\n"
         "  acog                anticogging query/start/finish/enable\r\n"
         " Diagnostics:\r\n"
         "  obs [0|1|2 [off]]   sensorless observer compare/switch\r\n"
@@ -475,6 +476,33 @@ static void cmd_conf_execute(foc_motor_t *m, const char *action)
     }
 }
 
+static void cmd_sensorless_print_status(void)
+{
+    const char *algo_name = "VESC";
+    if (g_angle_mgr.active_algo == SENSORLESS_ALGO_ORTEGA) {
+        algo_name = "Ortega";
+    } else if (g_angle_mgr.active_algo == SENSORLESS_ALGO_STO) {
+        algo_name = "STO";
+    }
+    foc_cmd_print("sensorless: algo=%s lock=%u streak=%u qual=%u strk_fail=%u(r=%u) conf_inst=%.2f conf_win=%.2f conf=%.2f err=%.1fdeg spd_err=%.0f over_cnt=%u win_rms=%.1f win_peak=%.1f win_min=%.2f th_enc=%.2f th_obs=%.2f\r\n",
+                  algo_name, (unsigned)g_angle_mgr.obs_lock,
+                  (unsigned)g_angle_mgr.qualified_streak,
+                  (unsigned)g_angle_mgr.qualified_cycles,
+                  (unsigned)g_angle_mgr.streak_fail_count,
+                  (unsigned)g_angle_mgr.streak_fail_reason,
+                  (double)g_angle_mgr.conf_inst,
+                  (double)g_angle_mgr.conf_window,
+                  (double)g_angle_mgr.obs_confidence,
+                  (double)g_angle_mgr.angle_error_deg,
+                  (double)g_angle_mgr.speed_error_rpm,
+                  (unsigned)g_angle_mgr.over_limit_streak,
+                  (double)g_angle_mgr.window_rms_deg,
+                  (double)g_angle_mgr.window_peak_err,
+                  (double)g_angle_mgr.window_min_conf,
+                  (double)g_angle_mgr.theta_encoder,
+                  (double)g_angle_mgr.theta_sensorless);
+}
+
 static void cmd_execute(char *line)
 {
     foc_motor_t *m = foc_app_motor(cur_axis);
@@ -486,9 +514,11 @@ static void cmd_execute(char *line)
     float val1 = 0.0f;
     float val2 = 0.0f;
     float val3 = 0.0f;
+    float val4 = 0.0f;
     uint8_t has_val1;
     uint8_t has_val2;
     uint8_t has_val3;
+    uint8_t has_val4;
 
     cmd = strtok(line, " \t");
     if (cmd == 0) {
@@ -501,6 +531,7 @@ static void cmd_execute(char *line)
     has_val1 = cmd_parse_float(arg1, &val1);
     has_val2 = cmd_parse_float(arg2, &val2);
     has_val3 = cmd_parse_float(arg3, &val3);
+    has_val4 = cmd_parse_float(arg4, &val4);
 
     if (strcmp(cmd, "help") == 0) {
         cmd_print_help();
@@ -965,22 +996,160 @@ static void cmd_execute(char *line)
         }
 
     } else if (strcmp(cmd, "ident") == 0) {
-        if ((arg1 != 0) && (strcmp(arg1, "apply") == 0) &&
-            (arg2 == 0)) {
+        if ((arg1 != 0) && (strcmp(arg1, "apply") == 0) && (arg2 == 0)) {
             if (foc_ident_apply(m) != 0U) {
-                foc_cmd_print("M%u applied: Rs=%.4f Ls=%.2fuH, "
-                              "current loop retuned\r\n",
+                foc_cmd_print("M%u applied: pp=%.0f Rs=%.4f Ls=%.2fuH Ke=%.2f\r\n",
                               (unsigned)cur_axis,
+                              (double)m->params.pole_pairs,
                               (double)m->params.rs_ohm,
-                              (double)(m->params.ls_henry * 1e6f));
+                              (double)(m->params.ls_henry * 1e6f),
+                              (double)m->params.ke);
             } else {
                 foc_cmd_print("err: no valid result (run 'ident' first, "
                               "axis must not be running)\r\n");
             }
-        } else if (arg1 == 0) {
-            foc_ident_start(m);
+        } else if ((arg1 != 0) && (strcmp(arg1, "show") == 0) && (arg2 == 0)) {
+            const foc_ident_result_t *res = foc_ident_get_result();
+            foc_cmd_print("ident result (valid=%u):\r\n", (unsigned)res->valid);
+            if (res->has_rs_ls != 0U) {
+                foc_cmd_print("  Rs=%.4f ohm, Ls=%.2f uH (I=%.2fA)\r\n",
+                              (double)res->rs_ohm, (double)(res->ls_henry * 1e6f),
+                              (double)res->test_current_a);
+            }
+            if (res->has_ld_lq != 0U) {
+                foc_cmd_print("  Ld=%.2f uH, Lq=%.2f uH, dL=%+.2f uH (xi=%+.2f%%, Lq/Ld=%.3f)\r\n",
+                              (double)(res->ld_henry * 1e6f), (double)(res->lq_henry * 1e6f),
+                              (double)(res->delta_l_henry * 1e6f),
+                              (double)(res->saliency_ratio * 100.0f),
+                              (double)(res->lq_henry / res->ld_henry));
+            }
+            if (res->has_pp != 0U) {
+                foc_cmd_print("  Pole Pairs=%.0f (raw=%.2f, res=%.1f%%)\r\n",
+                              (double)res->pole_pairs, (double)res->pp_calc_raw,
+                              (double)(res->pp_residual * 100.0f));
+            }
+            if (res->has_flux != 0U) {
+                foc_cmd_print("  Flux=%.5f Wb, Ke=%.2f V/krpm\r\n",
+                              (double)res->flux_linkage_wb, (double)res->ke_v_krpm);
+            }
+        } else if ((arg1 != 0) && (strcmp(arg1, "pp") == 0) && (arg2 == 0)) {
+            foc_ident_start_mode(m, FOC_IDENT_MODE_PP);
+        } else if ((arg1 != 0) && (strcmp(arg1, "rs") == 0) && (arg2 == 0)) {
+            foc_ident_start_mode(m, FOC_IDENT_MODE_RS_LS);
+        } else if ((arg1 != 0) && ((strcmp(arg1, "ldq") == 0) || (strcmp(arg1, "ld_lq") == 0)) && (arg2 == 0)) {
+            foc_ident_start_mode(m, FOC_IDENT_MODE_LD_LQ);
+        } else if ((arg1 != 0) && (strcmp(arg1, "flux") == 0) && (arg2 == 0)) {
+            foc_ident_start_mode(m, FOC_IDENT_MODE_FLUX);
+        } else if ((arg1 == 0) || ((strcmp(arg1, "full") == 0) && (arg2 == 0))) {
+            foc_ident_start_mode(m, FOC_IDENT_MODE_FULL);
         } else {
-            foc_cmd_print("err: ident [apply]\r\n");
+            foc_cmd_print("err: ident [full|rs|ldq|pp|flux|show|apply]\r\n");
+        }
+
+    } else if (strcmp(cmd, "bench") == 0) {
+        if ((arg1 != 0) && (strcmp(arg1, "reset") == 0)) {
+            foc_sensorless_bench_reset_metrics();
+            foc_cmd_print("bench: metrics reset\r\n");
+        } else if ((arg1 != 0) && (strcmp(arg1, "align") == 0)) {
+            foc_sensorless_bench_auto_align(m);
+            foc_cmd_print("bench: offsets aligned to current encoder position\r\n");
+        } else if ((arg1 != 0) && (strcmp(arg1, "dtcomp") == 0)) {
+            if (has_val2 != 0U) {
+                g_sensorless_bench.obs_deadtime_comp_enable = (uint8_t)val2;
+                if ((arg3 != 0) && (has_val3 != 0U) && (val3 >= 0.0f)) {
+                    g_sensorless_bench.deadtime_comp_v = val3;
+                }
+            }
+            foc_cmd_print("bench: dtcomp enable=%u v=%.3fV\r\n",
+                          (unsigned)g_sensorless_bench.obs_deadtime_comp_enable,
+                          (double)g_sensorless_bench.deadtime_comp_v);
+        } else if ((arg1 != 0) && (strcmp(arg1, "steady") == 0) && (has_val2 != 0U)) {
+            foc_sensorless_bench_set_steady((uint8_t)val2);
+            foc_cmd_print("bench: steady mode=%u\r\n", (unsigned)(uint8_t)val2);
+        } else if ((arg1 != 0) && (strcmp(arg1, "start") == 0)) {
+            foc_sensorless_bench_enable(1U);
+            foc_cmd_print("bench: running\r\n");
+        } else if ((arg1 != 0) && (strcmp(arg1, "stop") == 0)) {
+            foc_sensorless_bench_enable(0U);
+            foc_cmd_print("bench: stopped\r\n");
+        } else if ((arg1 == 0) || (strcmp(arg1, "status") == 0)) {
+            foc_sensorless_bench_t *b = &g_sensorless_bench;
+            uint32_t n1 = b->obs1_ortega.samples;
+            uint32_t n2 = b->obs2_vesc.samples;
+            uint32_t n3 = b->obs3_sto_pll.samples;
+            uint32_t n4 = b->obs4_sto_cordic.samples;
+            uint32_t n5 = b->obs5_hfi.samples;
+
+            float mean1 = (n1 > 0U) ? (b->obs1_ortega.err_sum_deg / (float)n1) : 0.0f;
+            float rms1  = (n1 > 0U) ? sqrtf(b->obs1_ortega.err_sq_sum / (float)n1) : 0.0f;
+            float mean2 = (n2 > 0U) ? (b->obs2_vesc.err_sum_deg / (float)n2) : 0.0f;
+            float rms2  = (n2 > 0U) ? sqrtf(b->obs2_vesc.err_sq_sum / (float)n2) : 0.0f;
+            float mean3 = (n3 > 0U) ? (b->obs3_sto_pll.err_sum_deg / (float)n3) : 0.0f;
+            float rms3  = (n3 > 0U) ? sqrtf(b->obs3_sto_pll.err_sq_sum / (float)n3) : 0.0f;
+            float mean4 = (n4 > 0U) ? (b->obs4_sto_cordic.err_sum_deg / (float)n4) : 0.0f;
+            float rms4  = (n4 > 0U) ? sqrtf(b->obs4_sto_cordic.err_sq_sum / (float)n4) : 0.0f;
+            float mean5 = (n5 > 0U) ? (b->obs5_hfi.err_sum_deg / (float)n5) : 0.0f;
+            float rms5  = (n5 > 0U) ? sqrtf(b->obs5_hfi.err_sq_sum / (float)n5) : 0.0f;
+
+            foc_cmd_print("--- Sensorless Benchmark Arena (Steady=%u, N=%u, DtComp=%u) ---\r\n",
+                          (unsigned)b->steady_state, (unsigned)b->total_samples,
+                          (unsigned)b->obs_deadtime_comp_enable);
+            foc_cmd_print("1. Ortega Flux     : mean=%.1f deg, rms=%.1f deg, peak=%.1f deg, speed=%.0f rpm, flux=%.3fmWb, center=(%.3f,%.3f)mWb, lock=%u, cpu=%u cyc\r\n",
+                          (double)mean1, (double)rms1, (double)b->obs1_ortega.err_peak_deg,
+                          (double)b->obs1_ortega.speed_rpm,
+                          (double)(b->obs1_ortega.flux_mag * 1000.0f),
+                          (double)(b->obs1_ortega.flux_center_a * 1000.0f),
+                          (double)(b->obs1_ortega.flux_center_b * 1000.0f),
+                          (unsigned)b->obs1_ortega.converged, (unsigned)b->obs1_ortega.exec_cycles);
+            foc_cmd_print("2. VESC Flux       : mean=%.1f deg, rms=%.1f deg, peak=%.1f deg, speed=%.0f rpm, flux=%.3fmWb, center=(%.3f,%.3f)mWb, lock=%u, cpu=%u cyc\r\n",
+                          (double)mean2, (double)rms2, (double)b->obs2_vesc.err_peak_deg,
+                          (double)b->obs2_vesc.speed_rpm,
+                          (double)(b->obs2_vesc.flux_mag * 1000.0f),
+                          (double)(b->obs2_vesc.flux_center_a * 1000.0f),
+                          (double)(b->obs2_vesc.flux_center_b * 1000.0f),
+                          (unsigned)b->obs2_vesc.converged, (unsigned)b->obs2_vesc.exec_cycles);
+            foc_cmd_print("3. Simplified STO  : mean=%.1f deg, rms=%.1f deg, peak=%.1f deg, speed=%.0f rpm, lock=%u, cpu=%u cyc\r\n",
+                          (double)mean3, (double)rms3, (double)b->obs3_sto_pll.err_peak_deg,
+                          (double)b->obs3_sto_pll.speed_rpm,
+                          (unsigned)b->obs3_sto_pll.converged, (unsigned)b->obs3_sto_pll.exec_cycles);
+            foc_cmd_print("4. STO HW CORDIC   : mean=%.1f deg, rms=%.1f deg, peak=%.1f deg, speed=%.0f rpm, lock=%u, cpu=%u cyc\r\n",
+                          (double)mean4, (double)rms4, (double)b->obs4_sto_cordic.err_peak_deg,
+                          (double)b->obs4_sto_cordic.speed_rpm,
+                          (unsigned)b->obs4_sto_cordic.converged, (unsigned)b->obs4_sto_cordic.exec_cycles);
+            foc_cmd_print("5. HFI Square-Wave : en=%u, Vinj=%.2fV, mean=%.1f deg, rms=%.1f deg, peak=%.1f deg, speed=%.0f rpm, conf=%.2f, rip_iq=%.3fA, lock=%u, cpu=%u cyc\r\n",
+                          (unsigned)b->hfi_enabled, (double)b->hfi_inj_volt,
+                          (double)mean5, (double)rms5, (double)b->obs5_hfi.err_peak_deg,
+                          (double)b->obs5_hfi.speed_rpm,
+                          (double)b->hfi_confidence,
+                          (double)b->hfi_iq_ripple,
+                          (unsigned)b->obs5_hfi.converged, (unsigned)b->obs5_hfi.exec_cycles);
+        } else if ((arg1 != 0) && (strcmp(arg1, "diag") == 0) && (arg2 == 0)) {
+            foc_sensorless_bench_t *b = &g_sensorless_bench;
+            foc_cmd_print("diag: v_ab=(%.3f,%.3f)V i_ab=(%.3f,%.3f)A eta=(%.4f,%.4f)Wb th_raw=%.3frad th_enc=%.3frad bemf_ab=(%.3f,%.3f)V |bemf|=%.3fV\r\n",
+                          (double)b->diag_v_alpha, (double)b->diag_v_beta,
+                          (double)b->diag_i_alpha, (double)b->diag_i_beta,
+                          (double)b->diag_od_eta_a, (double)b->diag_od_eta_b,
+                          (double)b->diag_od_theta_raw, (double)b->diag_enc_theta,
+                          (double)b->diag_sto_bemf_a, (double)b->diag_sto_bemf_b,
+                          (double)b->diag_sto_bemf_mag);
+        } else if ((arg1 != 0) && (strcmp(arg1, "cordic_test") == 0) && (arg2 == 0)) {
+            /* 单元测试已知标准基准输入: (1,0)->0, (0,1)->90, (-1,0)->180, (0,-1)->-90 */
+            float a1 = foc_cordic_calc_phase(0.0f, 1.0f) * (180.0f / _PI);
+            float a2 = foc_cordic_calc_phase(1.0f, 0.0f) * (180.0f / _PI);
+            float a3 = foc_cordic_calc_phase(0.0f, -1.0f) * (180.0f / _PI);
+            float a4 = foc_cordic_calc_phase(-1.0f, 0.0f) * (180.0f / _PI);
+            foc_cmd_print("cordic_test: (1,0)=%.2f deg, (0,1)=%.2f deg, (-1,0)=%.2f deg, (0,-1)=%.2f deg\r\n",
+                          (double)a1, (double)a2, (double)a3, (double)a4);
+        } else if ((arg1 != 0) && (strcmp(arg1, "hfi") == 0)) {
+            if ((has_val2 != 0U) && ((val2 == 0.0f) || (val2 == 1.0f))) {
+                float inj_v = (has_val3 != 0U) ? val3 : 1.0f;
+                foc_sensorless_bench_hfi_enable((uint8_t)val2, inj_v);
+                foc_cmd_print("bench: hfi en=%u vinj=%.2fV\r\n", (unsigned)val2, (double)inj_v);
+            } else {
+                foc_cmd_print("err: bench hfi <0|1> [inj_volt]\r\n");
+            }
+        } else {
+            foc_cmd_print("err: bench [start|stop|reset|align|hfi <0|1> [volt]|dtcomp <0|1>|steady <0|1>|status|diag|cordic_test]\r\n");
         }
 
     } else if (strcmp(cmd, "conf") == 0) {
@@ -991,20 +1160,20 @@ static void cmd_execute(char *line)
         }
 
     } else if (strcmp(cmd, "blackbox") == 0) {
-        /* 导出故障黑匣子：512 拍 x (iu iw th iq duty_a)，十六进制浮点 */
+        /* 导出故障黑匣子：512 拍 x (iu iw th iq id)，十六进制浮点 */
         if (foc_motor_blackbox_active() != 0U) {
-            static float bb_u[512], bb_w[512], bb_th[512], bb_vq[512];
-            static float bb_duty[512];
+            static float bb_u[512], bb_w[512], bb_th[512], bb_iq[512];
+            static float bb_id[512];
             uint16_t k;
-            foc_motor_blackbox_dump(bb_u, bb_w, bb_th, bb_vq, bb_duty);
+            foc_motor_blackbox_dump(bb_u, bb_w, bb_th, bb_iq, bb_id);
             for (k = 0U; k < 512U; k++) {
                 foc_cmd_print("%d %08x %08x %08x %08x %08x\r\n",
                               (int)k,
                               (unsigned)*(uint32_t *)&bb_u[k],
                               (unsigned)*(uint32_t *)&bb_w[k],
                               (unsigned)*(uint32_t *)&bb_th[k],
-                              (unsigned)*(uint32_t *)&bb_vq[k],
-                              (unsigned)*(uint32_t *)&bb_duty[k]);
+                              (unsigned)*(uint32_t *)&bb_iq[k],
+                              (unsigned)*(uint32_t *)&bb_id[k]);
             }
         } else {
             foc_cmd_print("blackbox inactive (no fault since boot/clear)\r\n");
@@ -1142,6 +1311,170 @@ static void cmd_execute(char *line)
                           (unsigned)foc_telemetry_get_enable());
         } else {
             foc_cmd_print("err: log [0|1]\r\n");
+        }
+
+    } else if (strcmp(cmd, "deadtime") == 0) {
+        if (arg1 == 0) {
+            foc_cmd_print("deadtime: motor=%.3fV obs_enable=%u obs_v=%.3fV\r\n",
+                          (double)m->cfg.deadtime_comp_v,
+                          (unsigned)g_sensorless_bench.obs_deadtime_comp_enable,
+                          (double)g_sensorless_bench.deadtime_comp_v);
+        } else if ((strcmp(arg1, "obs") == 0) && (has_val2 != 0U)) {
+            g_sensorless_bench.obs_deadtime_comp_enable = (uint8_t)val2;
+            foc_cmd_print("deadtime obs enable=%u\r\n",
+                          (unsigned)g_sensorless_bench.obs_deadtime_comp_enable);
+        } else if ((strcmp(arg1, "volt") == 0) && (has_val2 != 0U) && (val2 >= 0.0f)) {
+            g_sensorless_bench.deadtime_comp_v = val2;
+            m->cfg.deadtime_comp_v = val2;
+            foc_cmd_print("deadtime volt=%.3fV\r\n", (double)val2);
+        } else {
+            foc_cmd_print("err: deadtime [obs <0|1> | volt <value>]\r\n");
+        }
+
+    } else if (strcmp(cmd, "feedback") == 0) {
+        if (arg1 == 0) {
+            const char *mode_str = (g_angle_mgr.mode == FOC_FEEDBACK_SENSORED_PRIMARY) ? "sensored" :
+                                   ((g_angle_mgr.mode == FOC_FEEDBACK_SENSORLESS_PRIMARY) ? "sensorless" : "auto");
+            const char *state_str = "unknown";
+            switch (g_angle_mgr.state) {
+            case FOC_ANGLE_SENSORED:              state_str = "sensored"; break;
+            case FOC_ANGLE_SENSORLESS_STARTUP:    state_str = "startup"; break;
+            case FOC_ANGLE_SENSORLESS_CANDIDATE:  state_str = "candidate"; break;
+            case FOC_ANGLE_BLEND_TO_SENSORLESS:   state_str = "to_sensorless"; break;
+            case FOC_ANGLE_SENSORLESS:            state_str = "sensorless"; break;
+            case FOC_ANGLE_BLEND_TO_SENSORED:     state_str = "to_sensored"; break;
+            case FOC_ANGLE_REJECTED:              state_str = "rejected"; break;
+            case FOC_ANGLE_SAFE_STOP:             state_str = "safe_stop"; break;
+            case FOC_ANGLE_SENSORLESS_IF_START:   state_str = "if_start"; break;
+            case FOC_ANGLE_SENSORLESS_IF_ACCEL:   state_str = "if_accel"; break;
+            case FOC_ANGLE_SENSORLESS_OBS_LOCKING:state_str = "obs_locking"; break;
+            case FOC_ANGLE_SENSORLESS_BLEND:      state_str = "blend"; break;
+            case FOC_ANGLE_SENSORLESS_RUN:        state_str = "run"; break;
+            case FOC_ANGLE_SENSORLESS_LOST:       state_str = "lost"; break;
+            default: break;
+            }
+            if (g_angle_mgr.mode == FOC_FEEDBACK_SENSORLESS_PRIMARY) {
+                float delta_deg = g_angle_mgr.handover_delta_rad * (180.0f / _PI);
+                foc_cmd_print("feedback: mode=sensorless state=%s blend=%.2f delta=%.1fdeg spd_open=%.1f spd_obs=%.1f lock=%u conf=%.2f streak=%u lost=%u if_curr=%.2f if_rpm=%.0f\r\n",
+                              state_str, (double)g_angle_mgr.handover_blend, (double)delta_deg, (double)g_angle_mgr.open_speed_rpm,
+                              (double)g_angle_mgr.speed_obs_rpm, g_angle_mgr.obs_lock, (double)g_angle_mgr.conf_window,
+                              (unsigned)g_angle_mgr.qualified_streak, g_angle_mgr.lost_reason,
+                              (double)g_angle_mgr.if_current_a, (double)g_angle_mgr.if_target_rpm);
+            } else {
+                const char *health_str = (g_angle_mgr.enc_health == ENCODER_HEALTH_NORMAL) ? "OK" :
+                                         ((g_angle_mgr.enc_health == ENCODER_HEALTH_SUSPECT) ? "SUSPECT" : "FAILED");
+                foc_cmd_print("feedback: mode=%s state=%s enc_health=%s blend=%.2f (T=%.2fs) enter=%.0f exit=%.0f lock=%u spd_obs=%.1f\r\n",
+                              mode_str, state_str, health_str, (double)g_angle_mgr.handover_blend,
+                              (double)g_angle_mgr.blend_time_s, (double)g_angle_mgr.enter_speed_rpm,
+                              (double)g_angle_mgr.exit_speed_rpm, g_angle_mgr.obs_lock, (double)g_angle_mgr.speed_obs_rpm);
+            }
+        } else if (strcmp(arg1, "sensored") == 0) {
+            foc_angle_mgr_set_mode(FOC_FEEDBACK_SENSORED_PRIMARY);
+            foc_cmd_print("feedback: mode=sensored (primary)\r\n");
+        } else if (strcmp(arg1, "auto") == 0) {
+            foc_angle_mgr_set_mode(FOC_FEEDBACK_AUTO_FALLBACK);
+            foc_cmd_print("feedback: mode=auto (fallback on enc failure)\r\n");
+        } else if (strcmp(arg1, "sensorless") == 0) {
+            foc_angle_mgr_set_mode(FOC_FEEDBACK_SENSORLESS_PRIMARY);
+            foc_cmd_print("feedback: mode=sensorless (primary VESC+I/F minimal safe loop)\r\n");
+        } else if (strcmp(arg1, "if") == 0) {
+            if ((has_val2 != 0U) && (val2 >= 0.10f) && (val2 <= 0.80f)) {
+                g_angle_mgr.if_current_a = val2;
+                if ((arg3 != 0) && (has_val3 != 0U) && (val3 >= 100.0f) && (val3 <= 1500.0f)) {
+                    g_angle_mgr.if_target_rpm = val3;
+                }
+                if ((arg4 != 0) && (has_val4 != 0U) && (val4 >= 50.0f) && (val4 <= 2000.0f)) {
+                    g_angle_mgr.if_accel_rpm_s = val4;
+                }
+                foc_cmd_print("feedback if: curr=%.2f A, target=%.0f rpm, accel=%.0f rpm/s\r\n",
+                              (double)g_angle_mgr.if_current_a, (double)g_angle_mgr.if_target_rpm, (double)g_angle_mgr.if_accel_rpm_s);
+            } else {
+                foc_cmd_print("feedback if: curr=%.2f A, target=%.0f rpm, accel=%.0f rpm/s\r\n",
+                              (double)g_angle_mgr.if_current_a, (double)g_angle_mgr.if_target_rpm, (double)g_angle_mgr.if_accel_rpm_s);
+                foc_cmd_print("usage: feedback if <curr_0.10..0.80A> [target_rpm] [accel_rpm_s]\r\n");
+            }
+        } else if (strcmp(arg1, "speed") == 0) {
+            if ((has_val2 != 0U) && (val2 >= 200.0f)) {
+                g_angle_mgr.enter_speed_rpm = val2;
+                if ((arg3 != 0) && (has_val3 != 0U) && (val3 >= 100.0f)) {
+                    g_angle_mgr.exit_speed_rpm = val3;
+                }
+                foc_cmd_print("feedback speed: enter=%.0f rpm, exit=%.0f rpm\r\n",
+                              (double)g_angle_mgr.enter_speed_rpm, (double)g_angle_mgr.exit_speed_rpm);
+            } else {
+                foc_cmd_print("err: feedback speed <enter_rpm> [exit_rpm]\r\n");
+            }
+        } else if (strcmp(arg1, "blend") == 0) {
+            if ((has_val2 != 0U) && (val2 >= 0.02f) && (val2 <= 2.0f)) {
+                g_angle_mgr.blend_time_s = val2;
+                foc_cmd_print("feedback blend: time=%.3f s\r\n", (double)g_angle_mgr.blend_time_s);
+            } else {
+                foc_cmd_print("err: feedback blend <0.02..2.0 s>\r\n");
+            }
+        } else {
+            foc_cmd_print("err: feedback [sensored|sensorless|auto|if <curr> [rpm]|speed <enter> <exit>|blend <sec>]\r\n");
+        }
+
+    } else if (strcmp(cmd, "enc") == 0) {
+        if (arg1 == 0) {
+            const char *health_str = (g_angle_mgr.enc_health == ENCODER_HEALTH_NORMAL) ? "OK" :
+                                     ((g_angle_mgr.enc_health == ENCODER_HEALTH_SUSPECT) ? "SUSPECT" : "FAILED");
+            foc_cmd_print("enc: health=%s streak=%u stagnant=%u inject=%u\r\n",
+                          health_str, (unsigned)g_angle_mgr.enc_err_streak,
+                          (unsigned)g_angle_mgr.enc_stagnant_cnt, (unsigned)g_angle_mgr.inject_type);
+        } else if (strcmp(arg1, "fault") == 0) {
+            if (arg2 == 0) {
+                foc_cmd_print("err: enc fault [freeze|step <deg>|speed <rpm>|clear]\r\n");
+            } else if (strcmp(arg2, "freeze") == 0) {
+                foc_angle_mgr_inject_fault(INJECT_FREEZE, 0.0f);
+                foc_cmd_print("enc: injected FREEZE fault (angle static, speed 0)\r\n");
+            } else if (strcmp(arg2, "step") == 0) {
+                float step_deg = (has_val3 != 0U) ? val3 : 90.0f;
+                foc_angle_mgr_inject_fault(INJECT_STEP, step_deg);
+                foc_cmd_print("enc: injected STEP fault (+%.1f deg)\r\n", (double)step_deg);
+            } else if (strcmp(arg2, "speed") == 0) {
+                float spd_spike = (has_val3 != 0U) ? val3 : 25000.0f;
+                foc_angle_mgr_inject_fault(INJECT_SPEED_SPIKE, spd_spike);
+                foc_cmd_print("enc: injected SPEED fault (%.1f rpm)\r\n", (double)spd_spike);
+            } else if (strcmp(arg2, "clear") == 0) {
+                foc_angle_mgr_inject_fault(INJECT_NONE, 0.0f);
+                foc_cmd_print("enc: cleared fault injection\r\n");
+            } else {
+                foc_cmd_print("err: enc fault [freeze|step <deg>|speed <rpm>|clear]\r\n");
+            }
+        } else {
+            foc_cmd_print("err: enc [status|fault [freeze|step|speed|clear]]\r\n");
+        }
+
+    } else if (strcmp(cmd, "sensorless") == 0) {
+        if (arg1 == 0) {
+            foc_cmd_print("err: sensorless [status|lock|algo [vesc|ortega|sto]]\r\n");
+        } else if (strcmp(arg1, "status") == 0) {
+            cmd_sensorless_print_status();
+        } else if (strcmp(arg1, "lock") == 0) {
+            foc_cmd_print("sensorless: lock=%u streak=%u qual=%u\r\n",
+                          (unsigned)g_angle_mgr.obs_lock,
+                          (unsigned)g_angle_mgr.qualified_streak,
+                          (unsigned)g_angle_mgr.qualified_cycles);
+        } else if (strcmp(arg1, "algo") == 0) {
+            if (arg2 == 0) {
+                const char *algo_str = (g_angle_mgr.active_algo == SENSORLESS_ALGO_VESC) ? "vesc" :
+                                       ((g_angle_mgr.active_algo == SENSORLESS_ALGO_ORTEGA) ? "ortega" : "sto");
+                foc_cmd_print("sensorless algo: %s\r\n", algo_str);
+            } else if (strcmp(arg2, "vesc") == 0) {
+                foc_angle_mgr_set_algo(SENSORLESS_ALGO_VESC);
+                foc_cmd_print("sensorless algo set: VESC (Constrained Flux)\r\n");
+            } else if (strcmp(arg2, "ortega") == 0) {
+                foc_angle_mgr_set_algo(SENSORLESS_ALGO_ORTEGA);
+                foc_cmd_print("sensorless algo set: Ortega (Nonlinear Flux)\r\n");
+            } else if (strcmp(arg2, "sto") == 0) {
+                foc_angle_mgr_set_algo(SENSORLESS_ALGO_STO);
+                foc_cmd_print("sensorless algo set: STO (State Observer)\r\n");
+            } else {
+                foc_cmd_print("err: sensorless algo [vesc|ortega|sto]\r\n");
+            }
+        } else {
+            foc_cmd_print("err: sensorless [status|lock|algo [vesc|ortega|sto]]\r\n");
         }
 
     } else {

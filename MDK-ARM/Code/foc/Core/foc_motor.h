@@ -137,6 +137,7 @@ typedef struct foc_motor {
     uint16_t slow_cnt;             /* 慢环分频计数 */
     uint16_t stall_cnt;            /* 堵转连续计数（慢环拍） */
     uint16_t stall_trip_ticks;     /* 堵转跳闸阈值（由超时 ms 换算） */
+    uint8_t  last_spd_is_obs;      /* 上一拍速度源是否为无感 (用于无扰平滑切换) */
 
     /* 测试信号注入钩子：CALIB 状态且 pwm_hold==0 时快环每拍调用，
      * 供参数辨识（Rs/Ls 方波注入）等测试例程改写 v_openloop。
@@ -227,10 +228,10 @@ void foc_motor_clear_fault(foc_motor_t *m);
 /** 冻结/恢复快环逐拍记录（fault 自动冻结，clear_fault 自动恢复） */
 void foc_motor_blackbox_freeze(void);
 void foc_motor_blackbox_resume(void);
-/** 导出环形缓冲：故障前 256 拍（16ms）的 iu/iw/theta_e/vq */
+/** 导出环形缓冲：故障前 512 拍（32ms）的 iu/iw/theta_e/iq/id */
 void foc_motor_blackbox_dump(float *out_u, float *out_w,
-                             float *out_th, float *out_vq,
-                             float *out_duty);
+                             float *out_th, float *out_iq,
+                             float *out_id);
 /** 1 = 已冻结（故障数据有效） */
 uint8_t foc_motor_blackbox_active(void);
 

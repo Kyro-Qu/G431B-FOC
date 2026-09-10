@@ -248,6 +248,11 @@ uint32_t foc_board_cycles(void)
     return DWT->CYCCNT;
 }
 
+uint32_t foc_port_cycles(void)
+{
+    return DWT->CYCCNT;
+}
+
 void foc_board_cpu_sample(uint32_t cycles)
 {
     g_foc_cpu_diag.last_cycles = cycles;

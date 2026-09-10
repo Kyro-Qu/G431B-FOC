@@ -289,6 +289,9 @@ int main(void)
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
+  /* 启用 STM32G4 片上硬件数学加速器 CORDIC 外设时钟 */
+  __HAL_RCC_CORDIC_CLK_ENABLE();
+
   system_power_checkpoint(SYSTEM_CHECKPOINT_BOOT, 0U, 0U, 0U);
 
   /* USER CODE BEGIN Init */

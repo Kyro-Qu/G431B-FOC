@@ -115,10 +115,10 @@
 #define FOC_CURRENT_BW_MAX_RADS 3000.0f
 
 /** 速度环 PI（输入 RPM 误差 → 输出 Iq 给定 A） */
-#define FOC_M0_VEL_KP           0.0010f    /* A/RPM；本电机实机稳定值 */
+#define FOC_M0_VEL_KP           0.0010f    /* A/RPM；基线稳定值 (实验证实优于 0.0008 与 0.0009) */
 #define FOC_M0_VEL_KI           0.0010f    /* A/(RPM·s)，降低低速积分过冲 */
 #define FOC_M0_VEL_RAMP_RPM_S   100.0f     /* 降低起步/反转电流冲击 */
-#define FOC_M0_VEL_LPF_TF       0.00530516f /* 高速路径 30 Hz */
+#define FOC_M0_VEL_LPF_TF       0.00397887f /* 高速路径 40 Hz (最佳基线) */
 #define FOC_VEL_LOW_FILTER_HZ   15.0f      /* 低速控制反馈路径 */
 #define FOC_M0_VEL_FRICTION_A   0.15f      /* 转动后的库仑摩擦前馈 */
 #define FOC_M0_VEL_START_A      0.70f      /* 一次性起步脱槽峰值，随后衰减 */

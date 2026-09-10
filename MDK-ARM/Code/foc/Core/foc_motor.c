@@ -11,7 +11,8 @@
 #include "foc_utils.h"
 #include "foc_port.h"
 #include "../HAL/foc_config.h"
-#include "../HAL/foc_board_g431.h"
+#include "../App/foc_sensorless_bench.h"
+#include "../App/foc_angle_manager.h"
 
 /* dq 电流遥测低通时间常数（仅用于观察，不进控制环） */
 #define FOC_IDQ_TELEM_LPF_TF 0.002f
@@ -63,8 +64,8 @@ static void foc_voltage_circle_limit(dq_t *v, float v_max)
 static float s_blackbox_u[FOC_BLACKBOX_LEN];
 static float s_blackbox_w[FOC_BLACKBOX_LEN];
 static float s_blackbox_th[FOC_BLACKBOX_LEN];
-static float s_blackbox_vq[FOC_BLACKBOX_LEN];
-static float s_blackbox_duty[FOC_BLACKBOX_LEN];
+static float s_blackbox_iq[FOC_BLACKBOX_LEN];
+static float s_blackbox_id[FOC_BLACKBOX_LEN];
 static uint16_t s_blackbox_head = 0U;
 static uint8_t s_blackbox_frozen = 0U;
 
@@ -73,10 +74,10 @@ static void foc_motor_blackbox_record(const foc_motor_t *m)
     s_blackbox_u[s_blackbox_head] = m->i_abc.a;
     s_blackbox_w[s_blackbox_head] = m->i_abc.c;
     s_blackbox_th[s_blackbox_head] = m->theta_e;
-    s_blackbox_vq[s_blackbox_head] = m->i_dq.q;
+    s_blackbox_iq[s_blackbox_head] = m->i_dq.q;
     /* 诊断：记录低通前 id——解耦项 we*Ls*id 直通 vq，是爆发
      * 放大器的核心输入，验证 id/iq 摆动的相对幅度与相位。 */
-    s_blackbox_duty[s_blackbox_head] = m->i_dq.d;
+    s_blackbox_id[s_blackbox_head] = m->i_dq.d;
     s_blackbox_head = (s_blackbox_head + 1U) % FOC_BLACKBOX_LEN;
 }
 
@@ -91,8 +92,8 @@ void foc_motor_blackbox_resume(void)
 }
 
 void foc_motor_blackbox_dump(float *out_u, float *out_w,
-                             float *out_th, float *out_vq,
-                             float *out_duty)
+                             float *out_th, float *out_iq,
+                             float *out_id)
 {
     uint16_t i;
     for (i = 0U; i < FOC_BLACKBOX_LEN; i++) {
@@ -100,9 +101,9 @@ void foc_motor_blackbox_dump(float *out_u, float *out_w,
         out_u[i] = s_blackbox_u[idx];
         out_w[i] = s_blackbox_w[idx];
         out_th[i] = s_blackbox_th[idx];
-        out_vq[i] = s_blackbox_vq[idx];
-        if (out_duty != 0) {
-            out_duty[i] = s_blackbox_duty[idx];
+        out_iq[i] = s_blackbox_iq[idx];
+        if (out_id != 0) {
+            out_id[i] = s_blackbox_id[idx];
         }
     }
 }
@@ -193,7 +194,7 @@ static uint8_t foc_motor_check_soft_current(foc_motor_t *m)
      * obs_switch_ms=0（未切换过）时 cycles-0 上电 1s 后恒大于窗口，
      * 自动失去豁免。 */
     if ((m->obs_switch_ms != 0U) &&
-        ((foc_board_cycles() - m->obs_switch_ms) <= 170000000U)) {
+        ((foc_port_cycles() - m->obs_switch_ms) <= 170000000U)) {
         m->safety.consecutive_over_limit = 0U;
         return 1U;
     }
@@ -235,12 +236,60 @@ static void foc_motor_slow_loop(foc_motor_t *m)
 {
     const float dt = m->dt_fast * (float)m->slow_div;
     const float dir = ((m->angle_source == FOC_ANGLE_ENCODER_CALIBRATED) &&
-                      (m->calib.valid != 0U))
+                      (m->calib.valid != 0U) &&
+                      (g_angle_mgr.mode != FOC_FEEDBACK_SENSORLESS_PRIMARY))
                           ? (float)m->calib.direction : 1.0f;
     float velocity_input = m->velocity_observer_rpm;
     float velocity_fast;
     float velocity_low;
     float velocity_blend;
+
+    /* 若角度管理器已处于过渡、接管、纯无感主控或编码器疑似/确认故障状态，
+     * 速度环输入无缝切换至仲裁平滑速度，彻底避免编码器故障将速度拉到 0 导致电流冲击或堵转保护误判 */
+    uint8_t cur_spd_is_obs = 0U;
+    if ((g_angle_mgr.handover_blend > 0.001f) ||
+        (g_angle_mgr.enc_health != ENCODER_HEALTH_NORMAL) ||
+        (g_angle_mgr.mode == FOC_FEEDBACK_SENSORLESS_PRIMARY) ||
+        (g_angle_mgr.state >= FOC_ANGLE_BLEND_TO_SENSORLESS)) {
+        velocity_input = g_angle_mgr.speed_control;
+        cur_spd_is_obs = 1U;
+    }
+
+    /* 当处于纯无感主控模式且未进入稳定的闭环运行态 (RUN) 之前:
+     * 电流给定完全由角度管理器快环精准生成（包含对齐斜坡与平滑衰减），慢环速度 PI 不写入覆盖 */
+    if ((g_angle_mgr.mode == FOC_FEEDBACK_SENSORLESS_PRIMARY) &&
+        (g_angle_mgr.state < FOC_ANGLE_SENSORLESS_RUN)) {
+        m->vel_ref_rpm = g_angle_mgr.open_speed_rpm;
+        velocity_input = g_angle_mgr.speed_control;
+        m->velocity_filt_rpm = velocity_input;
+        foc_speed_filter_reset(&m->vel_filter, velocity_input);
+        foc_speed_filter_reset(&m->vel_filter_low, velocity_input);
+        m->vel_track_pos_rad = m->position_rad;
+        return;
+    }
+
+    /* 速度源切换检测：当在编码器速度与无感估计速度之间切换时，执行无扰平滑切换 (Bumpless Transfer)，
+     * 重置滤波器并对速度环 PI 积分项做前向平衡补偿，消除首拍输入阶跃引起的电流冲击！
+     * 注意：纯无感主控模式在 BLEND 结束切入 RUN 时已由角度管理器完成无扰重平衡，此处不重复触发 */
+    if ((cur_spd_is_obs != m->last_spd_is_obs) &&
+        (g_angle_mgr.mode != FOC_FEEDBACK_SENSORLESS_PRIMARY)) {
+        m->last_spd_is_obs = cur_spd_is_obs;
+        foc_speed_filter_reset(&m->vel_filter, velocity_input);
+        foc_speed_filter_reset(&m->vel_filter_low, velocity_input);
+        /* 对速度 PI 积分项无扰重平衡:保持切换前后瞬时比例+积分总输出平滑一致 */
+        if (m->mode == FOC_MODE_VELOCITY) {
+            float err_new = m->vel_ref_rpm - velocity_input;
+            float p_new = m->pid_vel.kp * err_new;
+            float i_target = m->pid_vel.prev_output - p_new;
+            if (m->pid_vel.out_limit > 0.0f) {
+                i_target = foc_clampf(i_target, -m->pid_vel.out_limit, m->pid_vel.out_limit);
+            }
+            m->pid_vel.integral = i_target;
+            m->pid_vel.prev_error = err_new;
+        }
+    } else {
+        m->last_spd_is_obs = cur_spd_is_obs;
+    }
 
     /* 只有零速命令且长窗测速也确认静止时才把观察器残余抖动归零。
      * 运动中不能用诊断速度的瞬时 0 去门控 PLL，否则齿槽停顿会在控制
@@ -281,8 +330,9 @@ static void foc_motor_slow_loop(foc_motor_t *m)
          * 低速位置轨迹：用斜坡后的速度积分出连续位置参考。相较只看瞬时
          * 速度，位置误差会在进入下一个齿槽前就建立转矩，因此不会等到
          * 转速掉为零后才补电流。轨迹滞后被钳位，避免堵转时无限积累。
+         * 注意：纯无感主控模式严禁使用编码器 position_rad，track 必须强制为 0！
          */
-        if (fabsf(tgt) < 0.001f) {
+        if ((fabsf(tgt) < 0.001f) || (g_angle_mgr.mode == FOC_FEEDBACK_SENSORLESS_PRIMARY)) {
             m->vel_track_pos_rad = m->position_rad;
         } else {
             m->vel_track_pos_rad +=
@@ -398,8 +448,11 @@ static void foc_motor_slow_loop(foc_motor_t *m)
              *
              * target=0 时立即撤掉前馈，让 PI 负责制动；转子停止后上面的
              * 零速分支会清空积分并把 Iq 置零。
+             * 注意：纯无感主控模式在开环拖动到 500 RPM 切入闭环时已处于高速运动区，
+             * 严禁触发起步 boost 前馈，避免无感闭环瞬间被大前馈电流冲击冲垮！
              */
-            if (fabsf(tgt) >= 0.001f) {
+            if ((fabsf(tgt) >= 0.001f) &&
+                (g_angle_mgr.mode != FOC_FEEDBACK_SENSORLESS_PRIMARY)) {
                 int8_t cmd_sign = (tgt > 0.0f) ? 1 : -1;
                 float boost_max = m->cfg.vel_start_a -
                                   m->cfg.vel_friction_a;
@@ -552,8 +605,12 @@ static void foc_motor_slow_loop(foc_motor_t *m)
     if ((m->cfg.stall_enable != 0U) &&
         ((m->mode == FOC_MODE_VELOCITY) || (m->mode == FOC_MODE_POSITION)) &&
         (m->state == FOC_STATE_RUN)) {
+        float spd_check = ((g_angle_mgr.handover_blend > 0.001f) ||
+                           (g_angle_mgr.enc_health != ENCODER_HEALTH_NORMAL))
+                          ? fabsf(velocity_input)
+                          : fabsf(m->velocity_filt_rpm);
         if ((fabsf(m->iq_ref) >= (0.95f * m->params.max_current_a)) &&
-            (fabsf(m->velocity_filt_rpm) < m->cfg.stall_rpm)) {
+            (spd_check < m->cfg.stall_rpm)) {
             if (m->stall_cnt < 0xFFFFU) {
                 ++m->stall_cnt;
             }
@@ -636,6 +693,7 @@ void foc_motor_init(foc_motor_t *m,
     m->svm.sector = 0U;
     m->ol_angle_step = 0.0f;
     m->slow_cnt = 0U;
+    m->last_spd_is_obs = 0U;
     m->traj.active = 0U;
     m->traj.xf = 0.0f;
     m->traj_target_latch = 0.0f;
@@ -811,66 +869,16 @@ void foc_motor_fast_loop(foc_motor_t *m)
     }
 
     /* 3. 电角度选择
-     *    CALIB 状态与开环 V/f 模式一律用开环角度；闭环按 angle_source
-     *    使用编码器角度，并加 angle_delay 拍超前补偿。 */
-    if ((st == FOC_STATE_CALIB) ||
-        (m->mode == FOC_MODE_OPENLOOP_VF) ||
-        (m->angle_source == FOC_ANGLE_OPEN_LOOP) ||
-        (m->calib.valid == 0U)) {
+     *    CALIB 状态与开环 V/f 模式一律用开环角度；
+     *    纯无感主控模式或闭环控制下统一交由角度仲裁管理器 foc_angle_mgr_update(m) 决定控制角度 */
+    if ((st == FOC_STATE_CALIB) || (m->mode == FOC_MODE_OPENLOOP_VF)) {
         m->theta_e = foc_wrap_0_2pi(m->theta_e + m->ol_angle_step);
-    } else if (m->angle_source == FOC_ANGLE_OBSERVER) {
-        /* 无感角度 + 观测器偏移补偿 + 同款超前补偿（we 用 PLL 速度）。
-         * 实验记录：PLL 角（64Hz 带宽）滞后过大也失稳，raw/PLL 各试。
-         *
-         * 切换渐变（ST MCSDK 角度混合做法）：离散跳变会造成最大 16°
-         * 相位阶跃 → 相电压阶跃 → 电流爆发 → 1.5A 限流电源 BOR 掉电
-         * （2026-09-04 实测）。改为 200ms 内 blend 0→1 线性过渡：
-         *   θ = θenc_path + wrap(θobs − θenc_path)·blend
-         * 差值先 wrap 到 ±π 再加权，杜绝 wrap 边界跳变。 */
-        float we = m->observer.speed_e_rads;
-        /* 换相角用 raw atan2 角：PLL 带宽 240Hz 在 233Hz 电频率下
-         * 欠锁、pll_theta 纹波 ±0.4rad（±23°）——低频抖动电流环滤
-         * 不掉，直接拉垮电源。raw 角的 16k 高频纹波由电流环 LPF
-         * 和电机电感自然滤除。PLL 仅用于速度估计（VESC 同款分工）。*/
-        float th_obs = m->observer.theta_e + m->observer.theta_offset_rad +
-                       (m->runtime.angle_delay_cycles * we * m->dt_fast);
-
-        if (m->obs_blending != 0U) {
-            float th_enc = foc_motor_encoder_theta_e(m) +
-                           (m->runtime.angle_delay_cycles *
-                            ((float)m->calib.direction *
-                             m->velocity_observer_rpm * FOC_RPM_TO_RADS *
-                             m->params.pole_pairs) * m->dt_fast);
-            float diff = foc_wrap_pm_pi(th_obs - th_enc);
-
-            if (m->obs_blending == 1U) {
-                /* 切向无感：200ms 权重 0→1 */
-                m->obs_blend += m->dt_fast * 5.0f;
-                if (m->obs_blend >= 1.0f) {
-                    m->obs_blend = 1.0f;
-                    m->obs_blending = 0U;
-                }
-            } else {
-                /* 切回编码器：200ms 权重 1→0，完成后由快环收尾停观测器
-                 * （obs 0 在主循环提前清 obs_enabled 会冻结观测角） */
-                m->obs_blend -= m->dt_fast * 5.0f;
-                if (m->obs_blend <= 0.0f) {
-                    m->obs_blend = 0.0f;
-                    m->obs_blending = 0U;
-                    m->angle_source = FOC_ANGLE_ENCODER_CALIBRATED;
-                    m->obs_enabled = 0U;
-                }
-            }
-            m->theta_e = foc_wrap_0_2pi(th_enc + diff * m->obs_blend);
-        } else {
-            m->theta_e = foc_wrap_0_2pi(th_obs);
-        }
+    } else if (g_angle_mgr.mode == FOC_FEEDBACK_SENSORLESS_PRIMARY) {
+        m->theta_e = foc_angle_mgr_update(m);
+    } else if ((m->angle_source == FOC_ANGLE_OPEN_LOOP) || (m->calib.valid == 0U)) {
+        m->theta_e = foc_wrap_0_2pi(m->theta_e + m->ol_angle_step);
     } else {
-        float we = (float)m->calib.direction * m->velocity_observer_rpm *
-                   FOC_RPM_TO_RADS * m->params.pole_pairs;
-        m->theta_e = foc_wrap_0_2pi(
-            foc_motor_encoder_theta_e(m) +
-            (m->runtime.angle_delay_cycles * we * m->dt_fast));
+        m->theta_e = foc_angle_mgr_update(m);
     }
 
     sin_th = foc_sin(m->theta_e);
@@ -930,17 +938,30 @@ void foc_motor_fast_loop(foc_motor_t *m)
         float vd = foc_pid_update(&m->pid_id, m->id_ref - id_fb, m->dt_fast);
         float vq = foc_pid_update(&m->pid_iq, m->iq_ref - iq_fb, m->dt_fast);
 
-        /* dq 解耦前馈：抵消旋转坐标系带来的交叉耦合项 ω·L·i 以及反电动势 ω·ψ。 */
+        /* dq 解耦前馈补偿：
+         * 根据表贴式永磁同步电机（SPM, Ld = Lq = Ls）稳态 dq 电压方程：
+         *   u_d = R_s * i_d + L_d * (di_d/dt) - ω_e * L_q * i_q
+         *   u_q = R_s * i_q + L_q * (di_q/dt) + ω_e * L_d * i_d + ω_e * ψ_f
+         * 交叉耦合动态使得 d 轴电压受 q 轴电流牵连，q 轴电压受 d 轴电流牵连。
+         * 为了实现 d 轴与 q 轴的完全解耦独立线性控制，在电流环 PI 输出基础上引入前馈补偿项：
+         *   v_d_decouple = - ω_e * L_s * i_q   (补偿 d 轴由 q 轴电流耦合产生的电压降)
+         *   v_q_decouple = + ω_e * L_s * i_d   (补偿 q 轴由 d 轴弱磁电流耦合产生的电压升)
+         * 反电动势项 ω_e * ψ_f 则由速度环前馈或 PI 积分项自适应吸收。
+         */
         if (m->cfg.decouple_enable != 0U) {
-            float we = (float)m->calib.direction *
-                       m->velocity_observer_rpm * FOC_RPM_TO_RADS *
-                       (float)m->params.pole_pairs;
+            float spd_mech = ((g_angle_mgr.handover_blend > 0.001f) ||
+                              (g_angle_mgr.enc_health != ENCODER_HEALTH_NORMAL) ||
+                              (g_angle_mgr.mode == FOC_FEEDBACK_SENSORLESS_PRIMARY) ||
+                              (g_angle_mgr.state >= FOC_ANGLE_BLEND_TO_SENSORLESS))
+                             ? g_angle_mgr.speed_control
+                             : m->velocity_observer_rpm;
+            float dir_scale = (g_angle_mgr.mode == FOC_FEEDBACK_SENSORLESS_PRIMARY)
+                              ? 1.0f : (float)m->calib.direction;
+            float we = dir_scale * spd_mech * FOC_RPM_TO_RADS * (float)m->params.pole_pairs;
 
-            /* 解耦项与 PID 反馈同源：使用陷波后反馈值，否则
-             * 2.5kHz 假影经 we*Ls 增益绕过陷波直通电压指令。 */
+            /* 解耦项与 PID 反馈同源：使用陷波后反馈值，精确抵消交叉电抗电压 */
             vd -= we * m->params.ls_henry * iq_fb;
-            float psi_f = (m->params.ke > 0.0f) ? (m->params.ke * 0.001114f) : 0.0f;
-            vq += we * (m->params.ls_henry * id_fb + psi_f);
+            vq += we * m->params.ls_henry * id_fb;
         }
 
         m->v_dq.d = vd;
@@ -955,15 +976,12 @@ void foc_motor_fast_loop(foc_motor_t *m)
 
     foc_voltage_circle_limit(&m->v_dq, m->drv->u_dc * INV_SQRT_3);
 
-    /* 7. 反 Park + SVPWM + 输出 */
+    /* 7. 反 Park + 死区补偿 + SVPWM 输出 */
     foc_inv_park(&m->v_dq, sin_th, cos_th, &v_ab);
-    m->v_ab_last = v_ab;   /* 观测器下一拍使用 */
 
     /* 死区补偿（VESC/MESC）：按相电流符号把死区损失的平均电压
      * 前馈补回。±0.05A 死区防电流过零处抖振；共模分量会被 SVM
-     * 的中点注入吸收，只有差模起作用——数学上正好是想要的 */
-    /* 死区补偿仅 RUN 闭环时生效：校准对齐电压低（duty ~7%），
-     * 固定补偿的相对误差巨大，会把校准电流推出限幅。 */
+     * 的中点注入吸收，只有差模起作用 */
     if ((m->cfg.deadtime_comp_v > 0.0f) && (st == FOC_STATE_RUN) &&
         (m->mode != FOC_MODE_OPENLOOP_VF)) {
         const float vc = m->cfg.deadtime_comp_v;
@@ -982,12 +1000,37 @@ void foc_motor_fast_loop(foc_motor_t *m)
         v_ab.beta += comp_ab.beta;
     }
 
+    /* 无感影子评测平台更新：
+     * 严格使用上一拍由 PWM 硬件实际施加且经 Vbus 折算的真实电压 v_ab_last，
+     * 严谨对齐本拍采样电流 i_ab 的物理时序（消除 z^-1 PWM 装填时延差） */
+    foc_sensorless_bench_update(m, m->v_ab_last.alpha, m->v_ab_last.beta,
+                                i_ab.alpha, i_ab.beta,
+                                foc_motor_encoder_theta_e(m), m->dt_fast);
+
+    /* HFI 影子模块高频注入电压安全叠加：
+     * 仅在影子 HFI 使能且非 CALIB 状态下，将估计 d 轴的高频方波电压叠加至输出定子电压 v_ab。
+     * 注意：此处仅叠加微小探测电压（<=1.5V），绝对不改写 FOC 换相角控制权！ */
+    if ((g_sensorless_bench.hfi_enabled != 0U) && (st == FOC_STATE_RUN)) {
+        v_ab.alpha += g_sensorless_bench.hfi_v_inj_alpha;
+        v_ab.beta  += g_sensorless_bench.hfi_v_inj_beta;
+    }
+
     foc_svm_calc(&v_ab, m->drv->u_dc, &m->svm);
     m->drv->set_compare(
         (uint32_t)(m->svm.duty_a * (float)m->drv->full_count),
         (uint32_t)(m->svm.duty_b * (float)m->drv->full_count),
         (uint32_t)(m->svm.duty_c * (float)m->drv->full_count),
         m->svm.sector);
+
+    /* 根据本拍实际占空比与母线电压重构端电压，供下一拍观测器使用 */
+    {
+        float udc_third = m->drv->u_dc * 0.33333333f;
+        float da = m->svm.duty_a;
+        float db = m->svm.duty_b;
+        float dc = m->svm.duty_c;
+        m->v_ab_last.alpha = udc_third * ((2.0f * da) - db - dc);
+        m->v_ab_last.beta  = m->drv->u_dc * 0.57735027f * (db - dc);
+    }
 }
 
 /* ======================== 命令接口 ======================== */
@@ -998,8 +1041,9 @@ uint8_t foc_motor_arm(foc_motor_t *m)
         return 0U;
     }
 
-    /* 闭环模式必须先有有效校准（或明确切到开环角度源） */
+    /* 闭环模式必须先有有效校准（或明确切到开环角度源，或处于纯无感主控模式） */
     if ((m->mode != FOC_MODE_OPENLOOP_VF) &&
+        (g_angle_mgr.mode != FOC_FEEDBACK_SENSORLESS_PRIMARY) &&
         ((m->calib.valid == 0U) ||
          (m->angle_source != FOC_ANGLE_ENCODER_CALIBRATED))) {
         foc_motor_fault(m, FOC_FAULT_NOT_CALIBRATED);
@@ -1007,6 +1051,7 @@ uint8_t foc_motor_arm(foc_motor_t *m)
     }
 
     /* 清干净旧状态，从零起步 */
+    foc_angle_mgr_reset();
     foc_pid_reset(&m->pid_id);
     foc_pid_reset(&m->pid_iq);
     foc_pid_reset(&m->pid_vel);
@@ -1031,6 +1076,10 @@ uint8_t foc_motor_arm(foc_motor_t *m)
     m->safety.soft_current_a = 0.0f;
     m->safety.trip_soft_current_a = 0.0f;
     m->safety.trip_was_hard = 0U;
+
+    if (g_angle_mgr.mode == FOC_FEEDBACK_SENSORLESS_PRIMARY) {
+        m->angle_source = FOC_ANGLE_OBSERVER;
+    }
 
     if (m->mode == FOC_MODE_OPENLOOP_VF) {
         /* 已校准时从当前转子电角度起步，避免沿用任意旧开环相位。电压和
