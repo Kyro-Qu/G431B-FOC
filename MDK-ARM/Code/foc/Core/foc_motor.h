@@ -89,6 +89,7 @@ typedef struct foc_motor {
     float fw_integral;             /* 弱磁电压闭环反馈积分 */
 
     /* ---- 反馈 ---- */
+    foc_feedback_t feedback;       /* 外部综合反馈上下文 (由 App/角度管理器自顶向下注入) */
     float theta_e;                 /* 当前使用的电角度 rad [0,2π) */
     float theta_mech;              /* 机械角 rad [0,2π) */
     float position_rad;            /* 连续多圈机械位置 rad */

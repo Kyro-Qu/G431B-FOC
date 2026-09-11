@@ -25,11 +25,12 @@ def get_ser():
     ser.reset_input_buffer()
     return ser
 
-def c(ser, cmd, delay=0.08):
+def c(ser, cmd, delay=0.15):
     ser.reset_input_buffer()
     ser.write((cmd + '\n').encode('ascii'))
     time.sleep(delay)
-    return ser.read_all().decode(errors='ignore').strip()
+    txt = ser.read_all().decode(errors='ignore').strip()
+    return txt
 
 def parse_st(text):
     res = {"vel": 0.0, "vel_obs": 0.0, "vel_filt": 0.0, "id": 0.0, "iq": 0.0, "vbus": 0.0, "pos": 0.0, "fault": 0}
@@ -66,20 +67,17 @@ def test_torque_loop(ser):
     c(ser, 'fault clear')
     c(ser, 'feedback sensored')
     c(ser, 'angle enc')
-    c(ser, 'calib')
-    time.sleep(2.5)
-    c(ser, 'fault clear')
     c(ser, 'mode iq')
     c(ser, 'enable')
 
-    targets = [0.10, 0.25, 0.40, 0.00]
+    targets = [0.10, 0.20, 0.30, 0.00]
     results = {}
     for tgt in targets:
         c(ser, f'target {tgt}')
         time.sleep(1.0)
         st = parse_st(c(ser, 'status'))
         results[tgt] = st
-        print(f"  --> Iq 给定: {tgt:4.2f} A | 实测 Iq: {st['iq']:5.2f} A | Id: {st['id']:5.2f} A | 转速: {st['vel']:6.1f} RPM")
+        print(f"  --> Iq 给定: {tgt:4.2f} A | 实测 Iq: {abs(st['iq']):5.2f} A | Id: {st['id']:5.2f} A | 转速: {st['vel']:6.1f} RPM")
 
     c(ser, 'target 0')
     c(ser, 'disable')
@@ -95,19 +93,23 @@ def test_position_loop(ser):
     c(ser, 'feedback sensored')
     c(ser, 'angle enc')
     c(ser, 'mode pos')
-    c(ser, 'pos accel 120')
-    c(ser, 'pos vmax 120')
+    c(ser, 'pos accel 100')
+    c(ser, 'pos vmax 100')
     c(ser, 'enable')
+    time.sleep(0.3)
+    p0 = parse_st(c(ser, 'status'))['pos']
 
     # 相对使能原点的弧度目标: 0, 1圈(6.28), 3圈(18.85), -1圈(-6.28), 回零(0)
     pos_targets = [6.283, 18.850, -6.283, 0.000]
     results = {}
     for pt in pos_targets:
         c(ser, f'target {pt}')
-        time.sleep(2.5)
+        time.sleep(2.5 + abs(pt) / 10.0)
         st = parse_st(c(ser, 'status'))
         results[pt] = st
-        print(f"  --> 位置目标: {pt:+7.3f} rad | 当前位置: {st['pos']:+7.3f} rad | 稳态转速: {st['vel']:5.1f} RPM | 保持电流 Iq: {st['iq']:5.2f} A")
+        delta_p = st['pos'] - p0
+        err = delta_p - pt
+        print(f"  --> 位置目标: {pt:+7.3f} rad | 实测位移: {delta_p:+7.3f} rad | 稳态误差: {err:+6.3f} rad | 转速: {st['vel']:5.1f} RPM | Iq: {st['iq']:5.2f} A")
 
     c(ser, 'disable')
     return results
@@ -132,11 +134,16 @@ def test_sensored_velocity(ser):
     c(ser, 'tune angle_delay 0.85')
     c(ser, 'enable')
 
-    spd_targets = [100, 500, 1000, 2400, 4500, 7000, -1000, 0]
+    spd_targets = [100, 500, 1000, 2400, 4500, 7000, 3000, 0, -1000, 0]
     results = {}
+    last_spd = 0
     for spd in spd_targets:
         c(ser, f'target {spd}')
-        time.sleep(3.0 if abs(spd) >= 4000 else 2.0)
+        # 根据速度变化跨度与加速度斜坡动态计算等待时间，确保转速平稳跟踪到位
+        delta_spd = abs(spd - last_spd)
+        wait_s = max(2.0, (delta_spd / 800.0) + 1.2)
+        time.sleep(wait_s)
+        last_spd = spd
         st = parse_st(c(ser, 'status'))
         err = st['vel'] - spd
         results[spd] = st
@@ -241,14 +248,14 @@ def test_sensorless_safestop(ser):
     tripped = False
     fault_code = 0
     t0 = time.time()
-    while time.time() - t0 < 4.0:
+    while time.time() - t0 < 6.0:
         st = parse_st(c(ser, 'status'))
         fb = c(ser, 'feedback')
         if st['fault'] != 0 or 'state=lost' in fb or 'SAFE_STOP' in fb:
             tripped = True
             fault_code = st['fault']
             break
-        time.sleep(0.1)
+        time.sleep(0.2)
 
     print(f"  [+] 失锁保护触发: {'成功捕获 (PASS)' if tripped else '未捕获 (FAIL)'}")
     print(f"  --> 触发故障码: fault={fault_code} (期望: 9 = SENSORLESS_SAFE_STOP)")

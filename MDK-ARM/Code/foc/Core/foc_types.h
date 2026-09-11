@@ -63,6 +63,22 @@ typedef enum {
     FOC_MODE_POSITION    = 3  /* 位置模式：位置 PI + 速度阻尼 → Iq 电流环 */
 } foc_mode_t;
 
+/**
+ * 外部综合反馈上下文（自顶向下注入 Core 控制核，彻底解耦 Core 对 App 策略层的引用）
+ * 包含换相角、速度反馈、纯无感启动与运行标志、前馈注入电压等
+ */
+typedef struct {
+    float   theta_e;               /* 当前仲裁输出的控制电角度 [0, 2pi) */
+    float   speed_feedback_rpm;    /* 注入给速度环的控制转速反馈 (RPM) */
+    float   open_speed_rpm;        /* 纯无感开环拖动阶段虚拟转速 (RPM) */
+    float   v_inj_alpha;           /* 高频注入/探测前馈电压 Alpha (V) */
+    float   v_inj_beta;            /* 高频注入/探测前馈电压 Beta (V) */
+    uint8_t sensorless_primary;    /* 1 = 当前配置为纯无感主控模式 */
+    uint8_t sensorless_openloop;   /* 1 = 处于纯无感开环或过渡阶段 (慢环速度PI不覆盖Iq给定) */
+    uint8_t fallback_active;       /* 1 = 处于无感接管/平滑过渡/编码器异常态 (速度输入切为 speed_feedback) */
+    uint8_t hfi_inject_enable;     /* 1 = 允许向输出定子电压叠加高频方波注入前馈 */
+} foc_feedback_t;
+
 /** Park/反 Park 使用的电角度来源 */
 typedef enum {
     FOC_ANGLE_OPEN_LOOP = 0,          /* 软件推进的虚拟角度 */
