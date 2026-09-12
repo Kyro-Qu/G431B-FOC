@@ -10,6 +10,7 @@
 #include "foc_sensorless_bench.h"
 #include "foc_angle_manager.h"
 #include "foc_telemetry.h"
+#include "foc_stp.h"
 #include "main.h"
 #include "../HAL/foc_board_g431.h"
 #include "../HAL/foc_store.h"
@@ -473,6 +474,35 @@ void foc_app_task(void)
     }
 
     g_foc_state_diag = (uint8_t)m0->state;
+
+    /* 状态跳变与故障单触发事件监控 (FOC-STP EVENT 闭环) */
+    {
+        static uint8_t s_last_reported_state = 0xFFU;
+        static uint8_t s_last_reported_fault = 0xFFU;
+
+        if (m0->state != s_last_reported_state) {
+            if (m0->state == FOC_STATE_FAULT) {
+                foc_telemetry_report_event(FOC_STP_EVENT_FAULT_TRIP, m0->safety.fault_code,
+                                           g_current_shunt_diag.fault_code,
+                                           (uint32_t)(m0->safety.soft_current_a * 100.0f));
+            } else if (s_last_reported_state != 0xFFU) {
+                foc_telemetry_report_event(FOC_STP_EVENT_STATE_CHANGE, m0->safety.fault_code,
+                                           g_current_shunt_diag.fault_code,
+                                           (uint32_t)m0->state);
+            }
+            s_last_reported_state = (uint8_t)m0->state;
+            s_last_reported_fault = m0->safety.fault_code;
+        } else if (m0->safety.fault_code != s_last_reported_fault) {
+            if (m0->safety.fault_code != 0U) {
+                foc_telemetry_report_event(FOC_STP_EVENT_FAULT_TRIP, m0->safety.fault_code,
+                                           g_current_shunt_diag.fault_code,
+                                           (uint32_t)(m0->safety.soft_current_a * 100.0f));
+            }
+            s_last_reported_fault = m0->safety.fault_code;
+        }
+    }
+
+    foc_telemetry_slow_tick();
 }
 
 void foc_app_on_key(void)

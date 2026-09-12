@@ -14,6 +14,7 @@
 #include "foc_sensorless_bench.h"
 #include "foc_angle_manager.h"
 #include "foc_telemetry.h"
+#include "foc_stp.h"
 #include "foc_anticog.h"
 #include "../Core/foc_port.h"
 #include "../Core/foc_utils.h"
@@ -43,10 +44,13 @@ extern UART_HandleTypeDef huart2;
 #define FOC_CLI_VERSION   "2"
 
 static uint8_t rx_dma_buf[CMD_RX_DMA_SIZE];
+static uint8_t rx_queue[CMD_RX_QUEUE_SIZE];
 static char line_buf[CMD_LINE_SIZE];
-static volatile uint16_t line_len = 0U;
-static volatile uint8_t line_ready = 0U;
+static uint16_t line_len = 0U;
+static volatile uint16_t rx_queue_head = 0U;
+static volatile uint16_t rx_queue_tail = 0U;
 static volatile uint32_t rx_queue_overflow_count = 0U;
+static uint16_t rx_last_pos = 0U;
 
 static uint8_t cur_axis = 0U;
 
@@ -64,6 +68,7 @@ void foc_cmd_print(const char *fmt, ...)
     static char out[CMD_TX_BUF_SIZE];
     va_list ap;
     int n;
+    uint32_t wait_start;
 
     va_start(ap, fmt);
     n = vsnprintf(out, sizeof(out), fmt, ap);
@@ -76,8 +81,19 @@ void foc_cmd_print(const char *fmt, ...)
         out[n] = '\0';
     }
 
+    /* 挂起遥测，防止新波形/状态抢占 */
     foc_telemetry_suspend(1U);
-    HAL_UART_AbortTransmit(&huart2);
+
+    /* 等待在途 DMA 传输正常完成（最多等待 5ms），避免粗暴 Abort 截断在途帧 */
+    wait_start = HAL_GetTick();
+    while ((huart2.gState != HAL_UART_STATE_READY) && ((HAL_GetTick() - wait_start) < 5U)) {
+        /* 空转等待在途 DMA 完成 */
+    }
+    if (huart2.gState != HAL_UART_STATE_READY) {
+        (void)HAL_UART_AbortTransmit(&huart2);
+        foc_telemetry_reset_tx_state();
+    }
+
     (void)HAL_UART_Transmit(&huart2, (uint8_t *)out, (uint16_t)n, 200U);
     foc_telemetry_suspend(0U);
 }
@@ -855,12 +871,14 @@ static void cmd_execute(char *line)
                           (double)m->cfg.vel_track_limit_rad,
                           (double)m->cfg.vel_track_rpm);
         } else if ((has_val2 != 0U) && (arg3 == 0) &&
-                   (strcmp(arg1, "kp") == 0)) {
+                   (strcmp(arg1, "kp") == 0) &&
+                   (val2 >= 0.0f) && (val2 <= 100.0f)) {
             m->pid_vel.kp = val2;
             foc_cmd_print("M%u vel kp=%.4f\r\n",
                           (unsigned)cur_axis, (double)val2);
         } else if ((has_val2 != 0U) && (arg3 == 0) &&
-                   (strcmp(arg1, "ki") == 0)) {
+                   (strcmp(arg1, "ki") == 0) &&
+                   (val2 >= 0.0f) && (val2 <= 100.0f)) {
             m->pid_vel.ki = val2;
             foc_cmd_print("M%u vel ki=%.4f\r\n",
                           (unsigned)cur_axis, (double)val2);
@@ -939,7 +957,8 @@ static void cmd_execute(char *line)
                 (double)m->cfg.traj_accel_rpm_s,
                 (double)m->cfg.pos_vel_limit_rpm);
         } else if ((strcmp(arg1, "kp") == 0) &&
-                   (has_val2 != 0U) && (arg3 == 0)) {
+                   (has_val2 != 0U) && (arg3 == 0) &&
+                   (val2 >= 0.0f) && (val2 <= 10000.0f)) {
             m->pid_pos.kp = val2;
             foc_cmd_print("M%u pos kp=%.3fA/rad\r\n",
                           (unsigned)cur_axis, (double)val2);
@@ -1300,6 +1319,31 @@ static void cmd_execute(char *line)
             foc_cmd_print("err: acog [start|finish|enable <0|1>]\r\n");
         }
 
+    } else if (strcmp(cmd, "telem") == 0) {
+        if (arg1 == 0) {
+            foc_cmd_print("telem: enable=%u mask=0x%08X\r\n",
+                          (unsigned)foc_telemetry_get_enable(),
+                          (unsigned)foc_telemetry_get_mask());
+        } else if ((strcmp(arg1, "mask") == 0) && (arg2 != 0)) {
+            uint32_t mask_val = (uint32_t)strtoul(arg2, 0, 0);
+            uint8_t res = foc_telemetry_set_mask(mask_val);
+            if (res == FOC_STP_ACK_OK) {
+                foc_cmd_print("telem: mask set to 0x%08X (ch_count=%u)\r\n",
+                              (unsigned)mask_val,
+                              (unsigned)foc_stp_popcount32(mask_val));
+            } else {
+                foc_cmd_print("err: mask channels %u exceeds max %u, kept 0x%08X\r\n",
+                              (unsigned)foc_stp_popcount32(mask_val),
+                              (unsigned)FOC_STP_MAX_WAVE_CHANNELS,
+                              (unsigned)foc_telemetry_get_mask());
+            }
+        } else if ((strcmp(arg1, "enable") == 0) && (has_val2 != 0U)) {
+            foc_telemetry_set_enable((val2 != 0.0f) ? 1U : 0U);
+            foc_cmd_print("telem: enable=%u\r\n", (unsigned)foc_telemetry_get_enable());
+        } else {
+            foc_cmd_print("err: telem [mask <hex|dec> | enable <0|1>]\r\n");
+        }
+
     } else if (strcmp(cmd, "log") == 0) {
         if (arg1 == 0) {
             foc_cmd_print("telem=%u\r\n",
@@ -1487,79 +1531,103 @@ static void cmd_execute(char *line)
 void foc_cmd_init(void)
 {
     line_len = 0U;
-    line_ready = 0U;
+    rx_queue_head = 0U;
+    rx_queue_tail = 0U;
     (void)HAL_UARTEx_ReceiveToIdle_DMA(&huart2, rx_dma_buf, CMD_RX_DMA_SIZE);
 }
 
 void foc_cmd_task(void)
 {
     char exec_buf[CMD_LINE_SIZE];
-    uint32_t primask;
+    uint8_t line_complete = 0U;
 
-    /* 如果 DMA 出错或处于空闲状态，重新使能接收 */
-    if (huart2.RxState == HAL_UART_STATE_READY) {
-        __HAL_UART_CLEAR_OREFLAG(&huart2);
-        __HAL_UART_CLEAR_NEFLAG(&huart2);
-        __HAL_UART_CLEAR_FEFLAG(&huart2);
-        (void)HAL_UARTEx_ReceiveToIdle_DMA(&huart2, rx_dma_buf, CMD_RX_DMA_SIZE);
+    /* The DMA callback only enqueues bytes.  Assemble and execute one line in
+     * the foreground so a packed burst such as "mode vf\r\nenable\r\n" cannot
+     * overwrite an earlier command or spend interrupt time parsing strings. */
+    while (line_complete == 0U) {
+        uint32_t primask;
+        uint8_t ch;
+
+        primask = foc_critical_enter();
+        if (rx_queue_tail == rx_queue_head) {
+            foc_critical_exit(primask);
+            return;
+        }
+        ch = rx_queue[rx_queue_tail];
+        rx_queue_tail = (uint16_t)((rx_queue_tail + 1U) % CMD_RX_QUEUE_SIZE);
+        foc_critical_exit(primask);
+
+        if ((ch == (uint8_t)'\r') || (ch == (uint8_t)'\n')) {
+            if (line_len != 0U) {
+                line_complete = 1U;
+            }
+        } else if (line_len < (CMD_LINE_SIZE - 1U)) {
+            line_buf[line_len++] = (char)ch;
+        } else {
+            ++rx_queue_overflow_count;
+        }
     }
 
-    if (line_ready == 0U) {
-        return;
-    }
-
-    primask = __get_PRIMASK();
-    __disable_irq();
-    memcpy(exec_buf, line_buf, sizeof(exec_buf));
+    memcpy(exec_buf, line_buf, line_len);
+    exec_buf[line_len] = '\0';
     line_len = 0U;
-    line_ready = 0U;
-    if (primask == 0U) {
-        __enable_irq();
-    }
-
     cmd_execute(exec_buf);
 }
 
-/* DMA 接收事件：把"新增的"字节搬进行缓冲，遇到行尾置标志。 */
+/* DMA idle/half/complete events only move newly received bytes into the queue.
+ * A half-transfer event does not stop DMA, so rx_last_pos prevents those bytes
+ * from being copied a second time when the following idle event arrives. */
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
     uint16_t i;
+    uint32_t primask;
 
     if (huart->Instance != USART2) {
         return;
     }
 
-    for (i = 0; i < Size; i++) {
-        char ch = (char)rx_dma_buf[i];
+    if (Size > CMD_RX_DMA_SIZE) {
+        Size = CMD_RX_DMA_SIZE;
+    }
 
-        if ((ch == '\r') || (ch == '\n')) {
-            if ((line_len > 0U) && (line_ready == 0U)) {
-                line_buf[line_len] = '\0';
-                line_ready = 1U;
-            }
-        } else if (line_ready == 0U) {
-            if (line_len < (CMD_LINE_SIZE - 1U)) {
-                line_buf[line_len] = ch;
-                line_len = (uint16_t)(line_len + 1U);
-            } else {
-                /* 单行超长被截断：真正自增溢出计数器 */
-                ++rx_queue_overflow_count;
-            }
+    primask = foc_critical_enter();
+    for (i = rx_last_pos; i < Size; i++) {
+        uint16_t next =
+            (uint16_t)((rx_queue_head + 1U) % CMD_RX_QUEUE_SIZE);
+
+        if (next == rx_queue_tail) {
+            ++rx_queue_overflow_count;
+        } else {
+            rx_queue[rx_queue_head] = rx_dma_buf[i];
+            rx_queue_head = next;
         }
     }
+    rx_last_pos = Size;
+
+    /* HAL returns OK after IDLE/TC, when the normal DMA transfer has stopped.
+     * At half-transfer it remains BUSY_RX and the existing DMA operation is
+     * left untouched. */
+    if (HAL_UARTEx_ReceiveToIdle_DMA(&huart2, rx_dma_buf, CMD_RX_DMA_SIZE)
+        == HAL_OK) {
+        rx_last_pos = 0U;
+    }
+    foc_critical_exit(primask);
 }
 
-/* 接收出错（溢出/噪声帧）：清错误并重启接收 */
+/* 接收或发送出错（溢出/噪声帧/DMA错误）：清错误并重启接收，同时释放 TX 所有权 */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART2) {
+        uint32_t primask = foc_critical_enter();
         __HAL_UART_CLEAR_OREFLAG(huart);
         __HAL_UART_CLEAR_NEFLAG(huart);
         __HAL_UART_CLEAR_FEFLAG(huart);
         __HAL_UART_CLEAR_PEFLAG(huart);
+        foc_telemetry_reset_tx_state();
         if (HAL_UARTEx_ReceiveToIdle_DMA(&huart2, rx_dma_buf, CMD_RX_DMA_SIZE)
             == HAL_OK) {
-            /* restarted */
+            rx_last_pos = 0U;
         }
+        foc_critical_exit(primask);
     }
 }

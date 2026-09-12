@@ -799,6 +799,11 @@
               <FilePath>.\Code\foc\App\foc_telemetry.c</FilePath>
             </File>
             <File>
+              <FileName>foc_stp.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Code\foc\App\foc_stp.c</FilePath>
+            </File>
+            <File>
               <FileName>foc_ident.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Code\foc\App\foc_ident.c</FilePath>
