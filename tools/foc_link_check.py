@@ -26,7 +26,8 @@ def main():
                 buf.extend(ch)
         if buf:
             print("try%d: OK %d bytes" % (i, len(buf)))
-            print(buf.decode("ascii", "replace")[:200])
+            # 二进制帧内含非 ASCII 字符，用 repr 安全打印避免 Windows 控制台 GBK 乱码
+            print(repr(bytes(buf[:200])))
             ok = True
             break
         print("try%d: 0 bytes" % i)
