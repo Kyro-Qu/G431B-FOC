@@ -18,7 +18,7 @@
 #define FOC_CAN_STATUS_PERIOD_MS       100U
 ```
 
-- `FOC_CAN_ENABLE=0`：CubeMX 仍初始化 FDCAN 句柄和引脚，但正式协议不会配置过滤器、启动控制器或拉低 PC11；SIT1042T 始终处于待机，串口 CLI 和 VOFA 不受影响。保留无条件 `MX_FDCAN1_Init()` 是为了再次从 `.ioc` 生成代码后，关闭宏仍不会被生成器悄悄绕过。
+- `FOC_CAN_ENABLE=0`：CubeMX 仍初始化 FDCAN 句柄和引脚，但正式协议不会配置过滤器、启动控制器或拉低 PC11；SIT1042T 始终处于待机，串口 CLI 和 FOC-STP 遥测不受影响。保留无条件 `MX_FDCAN1_Init()` 是为了再次从 `.ioc` 生成代码后，关闭宏仍不会被生成器悄悄绕过。
 - `FOC_CAN_BRS_ENABLE=0`：当前实机验证基线，CAN FD 整帧使用 500 kbit/s。
 - `FOC_CAN_BRS_ENABLE=1`：仲裁段 500 kbit/s、数据段 2 Mbit/s；只有上位机也设置为 2 Mbit/s 时才能开启。
 - `FOC_CAN_AUTO_RETRANSMISSION=1`：仲裁丢失或发送错误后由控制器自动重发。

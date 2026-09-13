@@ -115,9 +115,8 @@
 - **测试**：`tests/test_stp_cross.c`（gcc）生成 golden 二进制供 JS/Python 解码器跨语言校验；
   `tools/foc_stp.py` 共享 Python 解码器；`tools/hardware_closedloop_test.py` 上机回归
   （帧率/CRC/序号/掩码与速率切换 ACK/文本交错/CPU 余量）；`tools/foc_capture.py` 已迁移到新协议。
-  其余 `tools/foc_*.py`、`obs_eval.py`、`foc_staircase.py` 等历史实验脚本仍按 JustFloat 解析，
-  需用时改为 `from foc_stp import StpStreamDecoder`。
-- 实测：COM44 @ 6.5 Mbaud 500 Hz WAVE（756 帧/1.5 s）+ 10 Hz STATUS、CRC 零错误、掩码切换即时生效。
+  新增 `tools/systematic_firmware_test.py`（94 项系统级硬件功能自动化测试覆盖命令树、边界防御、Flash、CORDIC 硬件单元与协议高压混流）以及 `tools/motor_dynamic_suite.py`（电机真实多工况动态旋转闭环实测）。
+- 实测：COM44 @ 6.5 Mbaud 500 Hz WAVE + 10 Hz STATUS、CRC 零错误、零失步、掩码切换即时生效；系统性 94 项测试 100% 通过；真实电机低速(±200 RPM)、中速阶跃反转(±600 RPM)、高速巡航(+2000 RPM)及位置伺服走位全部实测通过。
 
 ## 版本使用建议
 
