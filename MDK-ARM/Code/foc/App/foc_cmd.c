@@ -53,8 +53,11 @@ static volatile uint32_t rx_queue_overflow_count = 0U;
 static uint16_t rx_last_pos = 0U;
 
 static uint8_t cur_axis = 0U;
+static uint8_t s_wave_silent = 0U;
 
 /* ---------------- 输出 ---------------- */
+
+static char s_cmd_out_buf[CMD_TX_BUF_SIZE];
 
 /*
  * 阻塞发送一段响应。先挂起遥测（ISR 里不再启动新的 DMA 发送），
@@ -63,22 +66,18 @@ static uint8_t cur_axis = 0U;
  * RX 常驻 DMA 空闲接收永远不等于 READY。
  * 公开给其它 App 模块（如 foc_ident）使用，仅限主循环上下文。
  */
-void foc_cmd_print(const char *fmt, ...)
+void foc_cmd_vprint(const char *fmt, va_list ap)
 {
-    static char out[CMD_TX_BUF_SIZE];
-    va_list ap;
     int n;
     uint32_t wait_start;
 
-    va_start(ap, fmt);
-    n = vsnprintf(out, sizeof(out), fmt, ap);
-    va_end(ap);
+    n = vsnprintf(s_cmd_out_buf, sizeof(s_cmd_out_buf), fmt, ap);
     if (n <= 0) {
         return;
     }
-    if (n >= (int)sizeof(out)) {
-        n = (int)sizeof(out) - 1;
-        out[n] = '\0';
+    if (n >= (int)sizeof(s_cmd_out_buf)) {
+        n = (int)sizeof(s_cmd_out_buf) - 1;
+        s_cmd_out_buf[n] = '\0';
     }
 
     /* 挂起遥测，防止新波形/状态抢占 */
@@ -94,8 +93,30 @@ void foc_cmd_print(const char *fmt, ...)
         foc_telemetry_reset_tx_state();
     }
 
-    (void)HAL_UART_Transmit(&huart2, (uint8_t *)out, (uint16_t)n, 200U);
+    (void)HAL_UART_Transmit(&huart2, (uint8_t *)s_cmd_out_buf, (uint16_t)n, 200U);
     foc_telemetry_suspend(0U);
+}
+
+void foc_cmd_print(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    foc_cmd_vprint(fmt, ap);
+    va_end(ap);
+}
+
+/* 在 wave 模式下静默普通成功回显，避免阻塞并挂起高速波形 DMA 流 */
+static void foc_cmd_print_resp(const char *fmt, ...)
+{
+    va_list ap;
+
+    if (s_wave_silent != 0U) {
+        return;
+    }
+
+    va_start(ap, fmt);
+    foc_cmd_vprint(fmt, ap);
+    va_end(ap);
 }
 
 static const char *state_name(foc_state_t s)
@@ -259,7 +280,8 @@ static void cmd_print_help(void)
         "  blackbox            dump 512-sample fault waveform\r\n"
         " Storage/telemetry:\r\n"
         "  conf <read|write|erase>\r\n"
-        "  log [0|1]           FOC-STP wave stream on/off\r\n"
+        "  wave [0|1]          wave stream mode (silent CLI control)\r\n"
+        "  log [0|1]           FOC-STP wave stream on/off (alias)\r\n"
         "  telem [mask <hex>|rate <hz>|enable <0|1>]\r\n",
         (unsigned)cur_axis);
 }
@@ -716,8 +738,8 @@ static void cmd_execute(char *line)
                          (want == FOC_MODE_OPENLOOP_VF))) {
                         foc_app_vf_reset_commands();
                     }
-                    foc_cmd_print("M%u mode=%s\r\n",
-                                  (unsigned)cur_axis, mode_name(m->mode));
+                    foc_cmd_print_resp("M%u mode=%s\r\n",
+                                       (unsigned)cur_axis, mode_name(m->mode));
                 } else {
                     foc_cmd_print("err: mode change needs IDLE; state=%s"
                                   " calib=%u (disable first)\r\n",
@@ -756,8 +778,8 @@ static void cmd_execute(char *line)
             foc_motor_set_target(m, val1);
             unit = (m->mode == FOC_MODE_TORQUE) ? "A"
                  : ((m->mode == FOC_MODE_VELOCITY) ? "RPM" : "rad");
-            foc_cmd_print("M%u target=%.3f%s\r\n",
-                          (unsigned)cur_axis, (double)val1, unit);
+            foc_cmd_print_resp("M%u target=%.3f%s\r\n",
+                               (unsigned)cur_axis, (double)val1, unit);
         }
 
     } else if (strcmp(cmd, "vq") == 0) {
@@ -775,8 +797,8 @@ static void cmd_execute(char *line)
         } else if ((has_val1 != 0U) && (arg2 == 0) &&
                    (val1 >= 0.0f) && (val1 <= v_max)) {
             g_m0_openloop_vq = val1;
-            foc_cmd_print("M%u vf boost=%.3fV\r\n",
-                          (unsigned)cur_axis, (double)val1);
+            foc_cmd_print_resp("M%u vf boost=%.3fV\r\n",
+                               (unsigned)cur_axis, (double)val1);
         } else {
             foc_cmd_print("err: vq [V], 0 <= V <= %.2f\r\n", (double)v_max);
         }
@@ -793,8 +815,8 @@ static void cmd_execute(char *line)
         } else if ((has_val1 != 0U) && (arg2 == 0) &&
                    (fabsf(val1) <= m->params.max_rpm)) {
             g_m0_openloop_rpm = val1;
-            foc_cmd_print("M%u rpm cmd=%.1f\r\n",
-                          (unsigned)cur_axis, (double)val1);
+            foc_cmd_print_resp("M%u rpm cmd=%.1f\r\n",
+                               (unsigned)cur_axis, (double)val1);
         } else {
             foc_cmd_print("err: rpm [RPM], |RPM| <= %.0f\r\n",
                           (double)m->params.max_rpm);
@@ -1007,9 +1029,9 @@ static void cmd_execute(char *line)
             foc_motor_restore_current_limits(m);
             foc_pid_set_limit(&m->pid_vel, val1);
             foc_pid_set_limit(&m->pid_pos, val1);
-            foc_cmd_print("M%u limit=%.2fA trip=%.2fA\r\n",
-                          (unsigned)cur_axis, (double)val1,
-                          (double)m->safety.current_limit_a);
+            foc_cmd_print_resp("M%u limit=%.2fA trip=%.2fA\r\n",
+                               (unsigned)cur_axis, (double)val1,
+                               (double)m->safety.current_limit_a);
         } else {
             foc_cmd_print("err: 0 < limit <= %.1fA\r\n",
                           (double)m->params.hard_current_a);
@@ -1376,13 +1398,42 @@ static void cmd_execute(char *line)
             foc_cmd_print("err: telem [mask <hex|dec> | rate <hz> | enable <0|1>]\r\n");
         }
 
+    } else if (strcmp(cmd, "wave") == 0) {
+        if (arg1 == 0) {
+            foc_cmd_print("wave=%u telem=%u\r\n",
+                          (unsigned)s_wave_silent,
+                          (unsigned)foc_telemetry_get_enable());
+        } else if ((arg2 == 0) && (has_val1 != 0U) &&
+                   ((val1 == 0.0f) || (val1 == 1.0f))) {
+            uint8_t en = (val1 != 0.0f) ? 1U : 0U;
+            s_wave_silent = en;
+            foc_telemetry_set_enable(en);
+            foc_cmd_print("wave=%u telem=%u\r\n",
+                          (unsigned)s_wave_silent,
+                          (unsigned)foc_telemetry_get_enable());
+        } else if ((arg2 == 0) && (arg1 != 0) &&
+                   ((strcmp(arg1, "on") == 0) || (strcmp(arg1, "start") == 0))) {
+            s_wave_silent = 1U;
+            foc_telemetry_set_enable(1U);
+            foc_cmd_print("wave=1 telem=1\r\n");
+        } else if ((arg2 == 0) && (arg1 != 0) &&
+                   ((strcmp(arg1, "off") == 0) || (strcmp(arg1, "stop") == 0))) {
+            s_wave_silent = 0U;
+            foc_telemetry_set_enable(0U);
+            foc_cmd_print("wave=0 telem=0\r\n");
+        } else {
+            foc_cmd_print("err: wave [0|1|on|off]\r\n");
+        }
+
     } else if (strcmp(cmd, "log") == 0) {
         if (arg1 == 0) {
             foc_cmd_print("telem=%u\r\n",
                           (unsigned)foc_telemetry_get_enable());
         } else if ((arg2 == 0) && (has_val1 != 0U) &&
                    ((val1 == 0.0f) || (val1 == 1.0f))) {
-            foc_telemetry_set_enable((val1 != 0.0f) ? 1U : 0U);
+            uint8_t en = (val1 != 0.0f) ? 1U : 0U;
+            s_wave_silent = en;
+            foc_telemetry_set_enable(en);
             foc_cmd_print("telem=%u\r\n",
                           (unsigned)foc_telemetry_get_enable());
         } else {
