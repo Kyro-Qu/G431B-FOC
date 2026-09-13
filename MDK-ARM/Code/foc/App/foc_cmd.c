@@ -39,7 +39,7 @@ extern UART_HandleTypeDef huart2;
 #define CMD_TWO_PI       6.28318530717958647692f
 
 #define FOC_FW_NAME       "FOC_G431"
-#define FOC_FW_VERSION    "0.3.11"
+#define FOC_FW_VERSION    "0.4.0"
 #define FOC_BOARD_NAME    "Matchstick_HFOC_G431"
 #define FOC_CLI_VERSION   "2"
 
@@ -259,7 +259,8 @@ static void cmd_print_help(void)
         "  blackbox            dump 512-sample fault waveform\r\n"
         " Storage/telemetry:\r\n"
         "  conf <read|write|erase>\r\n"
-        "  log [0|1]\r\n",
+        "  log [0|1]           FOC-STP wave stream on/off\r\n"
+        "  telem [mask <hex>|rate <hz>|enable <0|1>]\r\n",
         (unsigned)cur_axis);
 }
 
@@ -1321,9 +1322,10 @@ static void cmd_execute(char *line)
 
     } else if (strcmp(cmd, "telem") == 0) {
         if (arg1 == 0) {
-            foc_cmd_print("telem: enable=%u mask=0x%08X\r\n",
+            foc_cmd_print("telem: enable=%u mask=0x%08X rate=%uHz\r\n",
                           (unsigned)foc_telemetry_get_enable(),
-                          (unsigned)foc_telemetry_get_mask());
+                          (unsigned)foc_telemetry_get_mask(),
+                          (unsigned)foc_telemetry_get_rate_hz());
         } else if ((strcmp(arg1, "mask") == 0) && (arg2 != 0)) {
             uint32_t mask_val = (uint32_t)strtoul(arg2, 0, 0);
             uint8_t res = foc_telemetry_set_mask(mask_val);
@@ -1337,11 +1339,29 @@ static void cmd_execute(char *line)
                               (unsigned)FOC_STP_MAX_WAVE_CHANNELS,
                               (unsigned)foc_telemetry_get_mask());
             }
+        } else if ((strcmp(arg1, "rate") == 0) && (has_val2 != 0U)) {
+            uint8_t res;
+            if ((val2 < (float)FOC_TELEMETRY_RATE_MIN_HZ) ||
+                (val2 > (float)FOC_TELEMETRY_RATE_MAX_HZ)) {
+                res = FOC_STP_ACK_REJECTED;
+            } else {
+                res = foc_telemetry_set_rate_hz((uint16_t)val2);
+            }
+            if (res == FOC_STP_ACK_REJECTED) {
+                foc_cmd_print("err: telem rate %u..%u Hz, kept %uHz\r\n",
+                              (unsigned)FOC_TELEMETRY_RATE_MIN_HZ,
+                              (unsigned)FOC_TELEMETRY_RATE_MAX_HZ,
+                              (unsigned)foc_telemetry_get_rate_hz());
+            } else {
+                foc_cmd_print("telem: rate=%uHz%s\r\n",
+                              (unsigned)foc_telemetry_get_rate_hz(),
+                              (res == FOC_STP_ACK_LIMITED) ? " (rounded to integer divider)" : "");
+            }
         } else if ((strcmp(arg1, "enable") == 0) && (has_val2 != 0U)) {
             foc_telemetry_set_enable((val2 != 0.0f) ? 1U : 0U);
             foc_cmd_print("telem: enable=%u\r\n", (unsigned)foc_telemetry_get_enable());
         } else {
-            foc_cmd_print("err: telem [mask <hex|dec> | enable <0|1>]\r\n");
+            foc_cmd_print("err: telem [mask <hex|dec> | rate <hz> | enable <0|1>]\r\n");
         }
 
     } else if (strcmp(cmd, "log") == 0) {

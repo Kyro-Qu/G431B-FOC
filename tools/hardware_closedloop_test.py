@@ -1,211 +1,187 @@
 # -*- coding: utf-8 -*-
 """
-FOC-STP v1.0 硬件实测自动化验证套件
-全面验证：
-1. 串口高速全双工连接 (6.5 MBaud)
-2. CLI 指令交互 (version, status, telem, log 0/1)
-3. 500 Hz 自解释掩码波形流 (WAVE) 解析与帧序号单调性
-4. 10 Hz 独立状态心跳流 (STATUS) 解析与各字段物理真值检验
-5. 动态掩码实时切换 (telem mask)
+FOC-STP v1.0 硬件实测自动化验证套件（COM44 @ 6.5 MBaud）
+1. CLI 指令双向交互（version / status / telem）
+2. 500 Hz WAVE 波形流：帧率、序号单调、CRC 零错误
+3. 10 Hz STATUS 心跳：帧率、母线电压真值
+4. 动态掩码切换（telem mask）与 ACK 应答
+5. 动态速率切换（telem rate）与 ACK 应答
+6. 波形流开启时 CLI 文本交错不失步
+7. 快环 CPU 占用（status 的 cpu= 字段）在最大 16 通道下仍有余量
 """
-
+import os
+import re
 import sys
 import time
-import struct
+
 import serial
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from foc_stp import StpStreamDecoder, cli  # noqa: E402
 
 PORT = "COM44"
 BAUD = 6500000
 
-# CRC16-CCITT (poly 0x1021, init 0xFFFF)
-def crc16_ccitt(data: bytes) -> int:
-    crc = 0xFFFF
-    for b in data:
-        crc ^= (b << 8)
-        for _ in range(8):
-            if crc & 0x8000:
-                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
-            else:
-                crc = (crc << 1) & 0xFFFF
-    return crc
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-class StpStreamParser:
-    def __init__(self):
-        self.buf = bytearray()
-        self.wave_frames = []
-        self.status_frames = []
-        self.event_frames = []
-        self.ack_frames = []
-        self.text_lines = []
+passed = 0
+failed = 0
 
-    def feed(self, data: bytes):
-        self.buf.extend(data)
-        while len(self.buf) >= 8:
-            # 查找同步字 0xA5 0x5A
-            if self.buf[0] != 0xA5 or self.buf[1] != 0x5A:
-                idx = -1
-                for i in range(1, len(self.buf) - 1):
-                    if self.buf[i] == 0xA5 and self.buf[i+1] == 0x5A:
-                        idx = i
-                        break
-                if idx != -1:
-                    self.buf = self.buf[idx:]
-                else:
-                    if self.buf[-1] == 0xA5:
-                        self.buf = self.buf[-1:]
-                    else:
-                        self.buf.clear()
-                    break
 
-            if len(self.buf) < 8:
-                break
+def check(label, cond, detail=""):
+    global passed, failed
+    if cond:
+        passed += 1
+        print("  PASS  %s %s" % (label, detail))
+    else:
+        failed += 1
+        print("  FAIL  %s %s" % (label, detail))
 
-            ver_type = self.buf[2]
-            length = self.buf[3]
-            frame_len = 6 + length + 2 # SYNC(2) + VER(1) + LEN(1) + SEQ(2) + PAYLOAD(length) + CRC(2)
 
-            if length > 128:
-                # 非法超长长度，跳过假同步字
-                self.buf = self.buf[2:]
-                continue
+def capture(ser, secs):
+    dec = StpStreamDecoder()
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        dec.feed(ser.read(8192))
+    dec.flush_idle()
+    return dec
 
-            if len(self.buf) < frame_len:
-                break
 
-            # 提取帧内容与 CRC
-            raw_frame = bytes(self.buf[:frame_len])
-            cal_crc = crc16_ccitt(raw_frame[2:frame_len-2])
-            frame_crc = struct.unpack("<H", raw_frame[frame_len-2:frame_len])[0]
+def cpu_of(txt):
+    m = re.search(r"cpu=([\d\.]+)% \(max ([\d\.]+)%\)", txt)
+    return (float(m.group(1)), float(m.group(2))) if m else (None, None)
 
-            if cal_crc != frame_crc:
-                # CRC 校验失败，滑动 2 字节重新同步
-                self.buf = self.buf[2:]
-                continue
-
-            # CRC 正确，消费缓冲区
-            self.buf = self.buf[frame_len:]
-            seq = struct.unpack("<H", raw_frame[4:6])[0]
-            payload = raw_frame[6:frame_len-2]
-            ftype = ver_type & 0x0F
-
-            if ftype == 1: # WAVE
-                if len(payload) >= 8:
-                    tick, mask = struct.unpack("<II", payload[:8])
-                    vals_data = payload[8:]
-                    val_count = len(vals_data) // 4
-                    vals = struct.unpack(f"<{val_count}f", vals_data[:val_count*4])
-                    self.wave_frames.append({
-                        "seq": seq, "tick": tick, "mask": mask, "vals": vals
-                    })
-            elif ftype == 2: # STATUS
-                if len(payload) == 15:
-                    ts, vbus, mf, sf, state, mode, temp, rpm, iq = struct.unpack("<IHBBBBbhh", payload)
-                    self.status_frames.append({
-                        "seq": seq, "ts": ts, "vbus": vbus / 100.0,
-                        "motor_fault": mf, "shunt_fault": sf,
-                        "state": state, "mode": mode, "temp": temp,
-                        "rpm": rpm, "iq": iq / 100.0
-                    })
-            elif ftype == 3: # EVENT
-                if len(payload) == 11:
-                    ts, eid, mf, sf, detail = struct.unpack("<IBBBI", payload)
-                    self.event_frames.append({
-                        "seq": seq, "ts": ts, "eid": eid,
-                        "motor_fault": mf, "shunt_fault": sf, "detail": detail
-                    })
-            elif ftype == 5: # ACK
-                if len(payload) == 8:
-                    code, status, mask, rate = struct.unpack("<BBHI", payload[:8])
-                    self.ack_frames.append({
-                        "seq": seq, "code": code, "status": status,
-                        "mask": mask, "rate": rate
-                    })
 
 def main():
-    print(f"=== 连接 {PORT} @ {BAUD} ===")
-    ser = serial.Serial(PORT, BAUD, timeout=0.05, write_timeout=0.5)
+    print("=== 连接 %s @ %d ===" % (PORT, BAUD))
+    ser = serial.Serial(PORT, BAUD, timeout=0.02, write_timeout=0.5)
     time.sleep(0.1)
+    cli(ser, "telem enable 0")
 
-    # 1. 测试 CLI 交互与阻塞响应
-    print("\n--- [测试 1: CLI 命令双向交互] ---")
-    commands = [b"version\n", b"status\n", b"telem\n", b"obs 0\n"]
-    for cmd in commands:
-        ser.reset_input_buffer()
-        ser.write(cmd)
-        t0 = time.time()
-        resp = bytearray()
-        while time.time() - t0 < 0.3:
-            chunk = ser.read(4096)
-            if chunk:
-                resp.extend(chunk)
-        # 寻找 ASCII 响应行
-        ascii_text = resp.decode("latin1", "replace")
-        lines = [line.strip() for line in ascii_text.splitlines() if line.strip() and all(32 <= ord(c) < 127 for c in line.strip())]
-        print(f"CMD > {cmd.decode().strip()}")
-        if lines:
-            for l in lines[:3]:
-                print(f"  RECV: {l}")
-        else:
-            print("  WARN: 未解析到纯文本行 (可能混入二进制流)")
+    print("\n--- [1] CLI 命令双向交互 ---")
+    ver = cli(ser, "version")
+    print("  " + ver.replace("\r\n", "\n  "))
+    check("version 回显含固件名", "firmware=FOC_G431" in ver)
+    st = cli(ser, "status", wait=0.4)
+    check("status 回显含状态行", re.search(r"M0 (IDLE|RUN|CALIB|FAULT)", st) is not None)
+    tl = cli(ser, "telem")
+    check("telem 状态行含 mask/rate", "mask=0x" in tl and "rate=" in tl, tl)
 
-    # 2. 收集 1.5 秒 FOC-STP 协议流
-    print("\n--- [测试 2: 采集并解析 1.5 秒高速 FOC-STP 协议流] ---")
-    ser.write(b"telem enable 1\n")
-    time.sleep(0.1)
+    print("\n--- [2] 500 Hz WAVE + 10 Hz STATUS（默认掩码 10 通道，1.5s） ---")
+    cli(ser, "telem mask 0x040001FF")
+    cli(ser, "telem rate 500")
+    cli(ser, "telem enable 1")
     ser.reset_input_buffer()
-    parser = StpStreamParser()
-    t_start = time.time()
-    total_bytes = 0
-    while time.time() - t_start < 1.5:
-        data = ser.read(8192)
-        if data:
-            total_bytes += len(data)
-            parser.feed(data)
-        time.sleep(0.005)
+    dec = capture(ser, 1.5)
+    waves = dec.pop_waves()
+    status = dec.pop_status()
+    print("  bytes=%d waves=%d status=%d crc_err=%d desync=%d" % (
+        dec.bytes_in, len(waves), len(status), dec.crc_errors, dec.desync))
+    check("WAVE 帧率 ~500Hz", 700 <= len(waves) <= 800, "%d 帧/1.5s" % len(waves))
+    check("STATUS 帧率 ~10Hz", 13 <= len(status) <= 17, "%d 帧/1.5s" % len(status))
+    check("CRC 零错误", dec.crc_errors == 0, "crc_err=%d" % dec.crc_errors)
+    seq_ok = all(((waves[i + 1]["seq"] - waves[i]["seq"]) & 0xFFFF) == 1 for i in range(len(waves) - 1))
+    check("WAVE 序号连续无丢帧", seq_ok)
+    ticks_ok = all(waves[i + 1]["tick"] >= waves[i]["tick"] for i in range(len(waves) - 1))
+    check("WAVE tick 单调", ticks_ok)
+    check("WAVE 通道数=10 且掩码正确", waves and waves[-1]["mask"] == 0x040001FF and len(waves[-1]["vals"]) == 10)
+    if status:
+        s = status[-1]
+        print("  STATUS: vbus=%.2fV state=%d mode=%d rpm=%d iq=%.2fA temp=%d" % (
+            s["vbus"], s["state"], s["mode"], s["rpm"], s["iq"], s["temp"]))
+        check("母线电压 10..28V", 10.0 <= s["vbus"] <= 28.0, "%.2fV" % s["vbus"])
+        vb = waves[-1]["channels"].get("vbus_fast") if waves else None
+        check("vbus_fast 波形与 STATUS 一致(±0.3V)", vb is not None and abs(vb - s["vbus"]) < 0.3,
+              "wave=%.2f status=%.2f" % (vb if vb is not None else -1, s["vbus"]))
 
-    print(f"接收总字节数: {total_bytes} 字节 ({total_bytes / 1.5 / 1024:.1f} KB/s)")
-    print(f"解析到 WAVE 帧数: {len(parser.wave_frames)} 帧 (预期 ~750 帧 @500Hz)")
-    print(f"解析到 STATUS 帧数: {len(parser.status_frames)} 帧 (预期 ~15 帧 @10Hz)")
-
-    assert len(parser.wave_frames) > 300, f"WAVE 帧率过低: {len(parser.wave_frames)}"
-    assert len(parser.status_frames) >= 5, f"STATUS 心跳缺失: {len(parser.status_frames)}"
-
-    # 校验 WAVE 帧
-    sample_wave = parser.wave_frames[-1]
-    print(f"WAVE 样本: seq={sample_wave['seq']}, tick={sample_wave['tick']}, mask=0x{sample_wave['mask']:08X}, 通道数={len(sample_wave['vals'])}")
-    print(f"  前 4 个通道浮点数: {[round(v, 4) for v in sample_wave['vals'][:4]]}")
-
-    # 校验 STATUS 帧
-    sample_status = parser.status_frames[-1]
-    print(f"STATUS 心跳样本: seq={sample_status['seq']}, ts={sample_status['ts']}ms, Vbus={sample_status['vbus']}V, State={sample_status['state']}, Mode={sample_status['mode']}, Rpm={sample_status['rpm']}, Iq={sample_status['iq']}A")
-    assert 10.0 <= sample_status['vbus'] <= 28.0, f"Vbus 异常: {sample_status['vbus']}V"
-
-    # 3. 测试动态掩码切换 (telem mask 0x00000005 -> 仅 theta_e + vel_ctrl)
-    print("\n--- [测试 3: 动态掩码切换] ---")
+    print("\n--- [3] 动态掩码切换 + ACK ---")
+    ser.reset_input_buffer()
+    dec = StpStreamDecoder()
     ser.write(b"telem mask 0x05\n")
-    time.sleep(0.2)
+    t0 = time.time()
+    while time.time() - t0 < 0.5:
+        dec.feed(ser.read(8192))
+    acks = dec.pop_acks()
+    waves = dec.pop_waves()
+    check("收到 SET_MASK ACK(cmd=1,status=OK,mask=0x5)",
+          any(a["cmd_code"] == 1 and a["status"] == 0 and a["mask"] == 0x5 for a in acks), str(acks[-1:] or ""))
+    check("切换后 WAVE 掩码=0x5 通道数=2", waves and waves[-1]["mask"] == 0x5 and len(waves[-1]["vals"]) == 2)
     ser.reset_input_buffer()
-    parser2 = StpStreamParser()
-    t_start = time.time()
-    while time.time() - t_start < 0.5:
-        data = ser.read(8192)
-        if data:
-            parser2.feed(data)
-        time.sleep(0.005)
+    dec = StpStreamDecoder()
+    ser.write(b"telem mask 0xFFFFFFFF\n")
+    t0 = time.time()
+    while time.time() - t0 < 0.4:
+        dec.feed(ser.read(8192))
+    acks = dec.pop_acks()
+    waves = dec.pop_waves()
+    check("超 16 通道掩码被拒绝: ACK LIMITED 且保持 0x5",
+          any(a["cmd_code"] == 1 and a["status"] == 2 and a["mask"] == 0x5 for a in acks), str(acks[-1:] or ""))
+    check("被拒后 WAVE 掩码仍为 0x5", waves and waves[-1]["mask"] == 0x5)
 
-    if parser2.wave_frames:
-        last_wave = parser2.wave_frames[-1]
-        print(f"切换后 WAVE 掩码: 0x{last_wave['mask']:08X}, 通道数: {len(last_wave['vals'])}")
-        assert last_wave['mask'] == 0x05, f"掩码切换未生效: 0x{last_wave['mask']:08X}"
-        assert len(last_wave['vals']) == 2, f"通道数未缩减为 2: {len(last_wave['vals'])}"
-        print("  动态掩码切换成功且通道数精准自适应！")
+    print("\n--- [4] 动态速率切换 + ACK ---")
+    for rate, expect_ok in ((100, 0), (250, 0), (333, 2), (500, 0)):
+        ser.reset_input_buffer()
+        dec = StpStreamDecoder()
+        ser.write(("telem rate %d\n" % rate).encode())
+        t0 = time.time()
+        while time.time() - t0 < 1.2:
+            dec.feed(ser.read(8192))
+        acks = dec.pop_acks()
+        waves = [w for w in dec.pop_waves()]
+        ack = next((a for a in acks if a["cmd_code"] == 2), None)
+        eff = ack["rate_hz"] if ack else 0
+        # 用 MCU tick 估算真实帧率（去掉前 0.2s 切换暂态）
+        ws = [w for w in waves if w["tick"] >= waves[0]["tick"] + 200] if waves else []
+        span = (ws[-1]["tick"] - ws[0]["tick"]) / 1000.0 if len(ws) > 2 else 0
+        meas = (len(ws) - 1) / span if span else 0
+        check("rate %d -> ACK status=%d eff=%dHz" % (rate, expect_ok, eff),
+              ack is not None and ack["status"] == expect_ok and eff >= rate and eff <= rate * 1.02 + 1,
+              "ack=%s" % ack)
+        check("rate %d 实测帧率 %.0fHz ≈ %dHz" % (rate, meas, eff), eff and abs(meas - eff) <= max(3, eff * 0.03))
 
-    # 恢复默认掩码
-    ser.write(b"telem mask 0x040001FF\n")
-    time.sleep(0.1)
+    print("\n--- [5] 波形流开启时 CLI 文本交错 ---")
+    cli(ser, "telem mask 0x040001FF")
+    ser.reset_input_buffer()
+    dec = StpStreamDecoder()
+    for _ in range(5):
+        ser.write(b"version\n")
+        t0 = time.time()
+        while time.time() - t0 < 0.15:
+            dec.feed(ser.read(8192))
+    dec.flush_idle()
+    txt = dec.pop_text()
+    n_ver = txt.count("firmware=FOC_G431")
+    waves = dec.pop_waves()
+    check("5 次 version 回显全部完整", n_ver == 5, "got %d" % n_ver)
+    check("交错期间波形不失步 (crc_err=0, desync=0)", dec.crc_errors == 0 and dec.desync == 0,
+          "crc_err=%d desync=%d waves=%d" % (dec.crc_errors, dec.desync, len(waves)))
+    lines_with_fw = [l for l in txt.splitlines() if "firmware=" in l]
+    check("行尾 \\r\\n 保留（firmware= 均独占一行，无合并行）",
+          len(lines_with_fw) == 5 and all(l.startswith("firmware=") for l in lines_with_fw))
 
+    print("\n--- [6] 快环 CPU 占用（16 通道全速） ---")
+    cli(ser, "telem mask 0xFFFF")
+    time.sleep(0.3)
+    cur, mx = None, None
+    for _ in range(3):
+        st = cli(ser, "status", wait=0.4)
+        cur, mx = cpu_of(st)
+        if cur is not None:
+            break
+    check("status 含 cpu 字段", cur is not None, "cur=%s max=%s" % (cur, mx))
+    if cur is not None:
+        check("16 通道遥测下快环负载 < 60%%（cur=%.1f%% max=%.1f%%）" % (cur, mx), max(cur, mx) < 60.0)
+
+    # 恢复默认
+    cli(ser, "telem enable 0")
+    cli(ser, "telem mask 0x040001FF")
+    cli(ser, "telem rate 500")
     ser.close()
-    print("\n=== 所有硬件与协议流测试 100% PASS！===")
+
+    print("\nResult: %d passed, %d failed" % (passed, failed))
+    sys.exit(1 if failed else 0)
+
 
 if __name__ == "__main__":
     main()

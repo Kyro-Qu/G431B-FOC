@@ -100,6 +100,25 @@
   - 归档 `Docs/评估报告/HFI_影子评测与物理可行性定案报告_20260909.md`；
   - 提供多工况自动化测试套件 `tools/test_sensorless_primary_suite.py`。
 
+## v0.4.0 - `ac2a805`+ - FOC-STP 自解释掩码遥测协议（2026-09-12）
+
+- **协议切换（破坏性）**：USART2 遥测由 VOFA+ JustFloat（固定 16 通道 68 B）切换为 FOC-STP v1.0
+  （`A5 5A` 同步字 + 类型/长度/序号 + CRC16-CCITT）；规格见 `Docs/11_FOC-STP遥测协议.md`。
+  VOFA+ 不再兼容，配套上位机为网页版 foc-studio（Web Serial）。
+- **32 位通道字典、按掩码订阅**：单帧只发订阅通道（`16 + 4K` B，`K ≤ 16`），默认 10 通道 48 B/帧；
+  新增慢变量独立 `STATUS` 心跳（10 Hz，母线/故障/状态/模式/低频转速与电流）、`EVENT` 单触发
+  （故障跳闸/状态跳变）与 `ACK` 配置应答（生效掩码/速率回传）。
+- **固件调度**：快慢双缓冲物理隔离、短临界区 DMA 所有权仲裁、`foc_cmd_print` 等待在途帧后独占发送；
+  CRC16 查表实现（512 B Flash）把 16 通道打包的 ISR 开销降到 1/8；`s_slow_buf` 收敛到 32 B。
+- **CLI**：`telem` / `telem mask <hex>` / `telem rate <10..500>` / `telem enable <0|1>`；`log 0/1` 语义不变。
+  `version` 报 `0.4.0`。
+- **测试**：`tests/test_stp_cross.c`（gcc）生成 golden 二进制供 JS/Python 解码器跨语言校验；
+  `tools/foc_stp.py` 共享 Python 解码器；`tools/hardware_closedloop_test.py` 上机回归
+  （帧率/CRC/序号/掩码与速率切换 ACK/文本交错/CPU 余量）；`tools/foc_capture.py` 已迁移到新协议。
+  其余 `tools/foc_*.py`、`obs_eval.py`、`foc_staircase.py` 等历史实验脚本仍按 JustFloat 解析，
+  需用时改为 `from foc_stp import StpStreamDecoder`。
+- 实测：COM44 @ 6.5 Mbaud 500 Hz WAVE（756 帧/1.5 s）+ 10 Hz STATUS、CRC 零错误、掩码切换即时生效。
+
 ## 版本使用建议
 
 - 首次调试使用 v0.3 之后的单电机默认配置，并按 `Docs/04_上手指南.md` 逐步校准。

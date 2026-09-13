@@ -34,11 +34,12 @@ static volatile foc_tx_state_t s_tx_state = FOC_TX_IDLE;
 
 /* 独立物理缓冲：彻底杜绝 ISR 与主循环相互踩踏 */
 static uint8_t s_wave_buf[80]; /* 16 通道最大 80 字节 */
-static uint8_t s_slow_buf[64]; /* STATUS(23B) / EVENT(19B) / ACK(16B) */
+static uint8_t s_slow_buf[32]; /* STATUS(23B) / EVENT(19B) / ACK(16B) */
 
 static volatile uint8_t telem_enable = FOC_TELEMETRY_DEFAULT_ON;
 static volatile uint8_t telem_suspend = 0U;
 static volatile uint32_t s_channel_mask = FOC_TELEMETRY_DEFAULT_MASK;
+static volatile uint16_t s_telem_div = FOC_TELEMETRY_DIV;
 
 static uint16_t decim_cnt = 0U;
 static uint16_t s_wave_seq = 0U;
@@ -73,6 +74,7 @@ void foc_telemetry_init(void)
     s_slow_seq = 0U;
     s_last_status_ms = 0U;
     s_channel_mask = FOC_TELEMETRY_DEFAULT_MASK;
+    s_telem_div = FOC_TELEMETRY_DIV;
     s_tx_state = FOC_TX_IDLE;
     s_status_pending = 0U;
     s_event_pending = 0U;
@@ -89,6 +91,20 @@ uint8_t foc_telemetry_get_enable(void)
     return telem_enable;
 }
 
+uint16_t foc_telemetry_get_rate_hz(void)
+{
+    return (uint16_t)((uint32_t)FOC_PWM_FREQ_HZ / (uint32_t)s_telem_div);
+}
+
+static void queue_ack(uint8_t cmd_code, uint8_t status)
+{
+    s_ack_snap.cmd_code = cmd_code;
+    s_ack_snap.status = status;
+    s_ack_snap.effective_mask = s_channel_mask;
+    s_ack_snap.effective_rate_hz = foc_telemetry_get_rate_hz();
+    s_ack_pending = 1U;
+}
+
 uint8_t foc_telemetry_set_mask(uint32_t mask)
 {
     uint8_t count = foc_stp_popcount32(mask);
@@ -102,19 +118,36 @@ uint8_t foc_telemetry_set_mask(uint32_t mask)
         status = FOC_STP_ACK_OK;
     }
 
-    /* 记录 ACK 快照并排队发送 */
-    s_ack_snap.cmd_code = 1U; /* 1 = SET_MASK */
-    s_ack_snap.status = status;
-    s_ack_snap.effective_mask = s_channel_mask;
-    s_ack_snap.effective_rate_hz = 500U;
-    s_ack_pending = 1U;
-
+    queue_ack(FOC_STP_ACK_CMD_SET_MASK, status);
     return status;
 }
 
 uint32_t foc_telemetry_get_mask(void)
 {
     return s_channel_mask;
+}
+
+uint8_t foc_telemetry_set_rate_hz(uint16_t rate_hz)
+{
+    const uint32_t pwm_hz = (uint32_t)FOC_PWM_FREQ_HZ;
+    uint32_t div;
+    uint8_t status;
+
+    if ((rate_hz < FOC_TELEMETRY_RATE_MIN_HZ) || (rate_hz > FOC_TELEMETRY_RATE_MAX_HZ)) {
+        status = FOC_STP_ACK_REJECTED;
+    } else {
+        /* 分频只能取整数：非整除时向下取整分频（实际速率略高于请求），ACK 回传真实生效值 */
+        div = pwm_hz / (uint32_t)rate_hz;
+        if (div < (uint32_t)FOC_TELEMETRY_DIV) {
+            div = (uint32_t)FOC_TELEMETRY_DIV;
+        }
+        s_telem_div = (uint16_t)div;
+        decim_cnt = 0U;
+        status = ((pwm_hz % (uint32_t)rate_hz) == 0U) ? FOC_STP_ACK_OK : FOC_STP_ACK_LIMITED;
+    }
+
+    queue_ack(FOC_STP_ACK_CMD_SET_RATE, status);
+    return status;
 }
 
 void foc_telemetry_suspend(uint8_t on)
@@ -182,7 +215,7 @@ void foc_telemetry_isr_tick(void)
     if ((telem_enable == 0U) || (telem_suspend != 0U) || (mask == 0U)) {
         return;
     }
-    if (++decim_cnt < (uint16_t)FOC_TELEMETRY_DIV) {
+    if (++decim_cnt < s_telem_div) {
         return;
     }
     decim_cnt = 0U;
@@ -215,9 +248,15 @@ void foc_telemetry_isr_tick(void)
     }
 }
 
-/** 故障跳闸/状态改变事件：只锁存快照并排队，绝不阻塞打断 DMA */
+/** 故障跳闸/状态改变事件：只锁存快照并排队，绝不阻塞打断 DMA。
+ *  单槽快照：尚未发出的 FAULT_TRIP 不允许被后续低优先级事件覆盖。 */
 void foc_telemetry_report_event(uint8_t event_id, uint8_t motor_fault, uint8_t shunt_fault, uint32_t detail)
 {
+    if ((s_event_pending != 0U) &&
+        (s_event_snap.event_id == FOC_STP_EVENT_FAULT_TRIP) &&
+        (event_id != FOC_STP_EVENT_FAULT_TRIP)) {
+        return;
+    }
     s_event_snap.event_id = event_id;
     s_event_snap.motor_fault = motor_fault;
     s_event_snap.shunt_fault = shunt_fault;

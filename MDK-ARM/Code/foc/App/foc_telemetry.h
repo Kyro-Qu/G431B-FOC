@@ -17,6 +17,10 @@ extern "C" {
 /* 默认订阅掩码：包含 theta_e, iq_raw, vel_ctrl, vel_ref, id_filt, iq_filt, iq_ref, vd, vq, vbus_fast (0x040001FF) */
 #define FOC_TELEMETRY_DEFAULT_MASK  0x040001FFU
 
+/* 运行时可调波形速率范围 Hz（上限受 CDC 桥吞吐与快环预算约束，等于编译期 FOC_TELEMETRY_DIV 对应速率） */
+#define FOC_TELEMETRY_RATE_MIN_HZ   10U
+#define FOC_TELEMETRY_RATE_MAX_HZ   500U
+
 void foc_telemetry_init(void);
 
 /** 快环中调用 (500 Hz)：按掩码提取变量并 DMA 发送 WAVE 帧 */
@@ -35,6 +39,10 @@ uint8_t foc_telemetry_get_enable(void);
 /** 设置遥测掩码，popcount <= 16 生效并返回 FOC_STP_ACK_OK(0)，否则返回 FOC_STP_ACK_LIMITED(2) */
 uint8_t foc_telemetry_set_mask(uint32_t mask);
 uint32_t foc_telemetry_get_mask(void);
+
+/** 设置波形速率 Hz（10..500）：整除时 ACK_OK，非整除向下取整分频并 ACK_LIMITED，越界 ACK_REJECTED */
+uint8_t foc_telemetry_set_rate_hz(uint16_t rate_hz);
+uint16_t foc_telemetry_get_rate_hz(void);
 
 /** 临时挂起遥测（cmd_print 独占 UART 用），on=1 挂起 */
 void foc_telemetry_suspend(uint8_t on);

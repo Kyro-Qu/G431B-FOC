@@ -19,8 +19,9 @@
 - **七层保护**：双阈值过流、NaN 防护、堵转保护、参数自检、独立看门狗、
   故障锁存状态机、TAMP 断电黑匣子（详见 Docs/06）
 - **默认单电机，双轴框架完整预留**：算法层零全局状态，`FOC_NUM_AXES` 改 2 即开双轴
-- 串口命令行（6.5 Mbaud）在线调模式/目标/PID + VOFA+ JustFloat 16 通道波形
-  + DWT 实测快环 CPU 占用
+- 串口命令行（6.5 Mbaud）在线调模式/目标/PID + FOC-STP 自解释掩码遥测
+  （32 通道字典任意订阅、10 Hz 状态心跳、故障事件、CRC16，配套网页上位机
+  [foc-studio](https://kyroqu.xyz/foc-studio/)）+ DWT 实测快环 CPU 占用
 - 预留模块：无感磁链观测器+PLL（VESC 式）、霍尔传感器驱动
 
 > 调研范围除 SimpleFOC / ODrive / VESC / ST MCSDK 外，还包括
@@ -41,6 +42,7 @@
 | [Docs/07_移植指南.md](Docs/07_移植指南.md) | 换板卡/换 STM32 型号/换传感器/换采样拓扑的逐步清单 |
 | [Docs/08_调参与调试手册.md](Docs/08_调参与调试手册.md) | 工具软件用法、适配新电机全流程、PID 逐环调法与波形判读 |
 | [Docs/09_预留特性接入手册.md](Docs/09_预留特性接入手册.md) | 无感/HFI/抗齿槽/弱磁/CAN：预留代码怎么一步步接进工程并调试 |
+| [Docs/11_FOC-STP遥测协议.md](Docs/11_FOC-STP遥测协议.md) | 遥测协议规格、通道字典、`telem` 命令与三端（C/JS/Python）参考实现 |
 
 ## 快速开始
 

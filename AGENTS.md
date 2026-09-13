@@ -225,6 +225,8 @@ Vendor board reference material (schematics, MCSDK examples):
 Board hardware truth:
   20 mOhm shunts, effective amp gain ~1.371 (calibrated 1.367);
   equivalent to ST B-G431B-ESC1 (RSHUNT*GAIN identical, firmware portable).
-Telemetry: VOFA JustFloat 16 ch, table in MDK-ARM\Code\foc\App\foc_telemetry.h
+Telemetry: FOC-STP v1.0 (fw >= 0.4.0): 32-ch mask dictionary, 500 Hz WAVE + 10 Hz STATUS,
+  spec Docs\11_FOC-STP遥测协议.md, channel truth foc_telemetry.c extract_channel_value();
+  host = foc-studio (Web Serial), python decoder tools\foc_stp.py
 Serial CLI: USART2 6.5 Mbaud, commands listed by 'help' / Docs\04
 ```

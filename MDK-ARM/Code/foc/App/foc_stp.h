@@ -50,6 +50,10 @@ extern "C" {
 #define FOC_STP_ACK_REJECTED        0x01U
 #define FOC_STP_ACK_LIMITED         0x02U
 
+/* ACK 对应的命令码 */
+#define FOC_STP_ACK_CMD_SET_MASK    0x01U
+#define FOC_STP_ACK_CMD_SET_RATE    0x02U
+
 /* CRC16-CCITT (poly 0x1021, init 0xFFFF) 计算 */
 uint16_t foc_stp_crc16(const uint8_t *data, uint16_t len);
 uint16_t foc_stp_crc16_update(uint16_t crc, const uint8_t *data, uint16_t len);

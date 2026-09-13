@@ -31,7 +31,8 @@ App/     应用层：业务逻辑，不写算法不碰寄存器
   foc_calib      上电校准状态机
   foc_ident      Rs/Ls 自动测量（串口 ident / ident apply）
   foc_cmd        串口命令行（help 查看命令表）
-  foc_telemetry  VOFA+ JustFloat 遥测（16 通道，见头文件通道表）
+  foc_telemetry  FOC-STP 遥测调度（掩码波形 WAVE + STATUS/EVENT/ACK，Docs/11）
+  foc_stp        FOC-STP 纯 C 编解码器（帧封装 + 查表 CRC16，PC 可编译）
 ```
 
 ## 新增代码的归属规则
