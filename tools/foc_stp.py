@@ -128,12 +128,17 @@ class StpStreamDecoder(object):
         if not self.buf:
             return
         idx = self.buf.find(b"\xa5\x5a")
-        if idx == 0:
+        if idx == 0 and len(self.buf) >= 8:
+            self._drain()
             return
-        end = idx if idx > 0 else len(self.buf)
-        keep = 1 if (idx < 0 and self.buf[end - 1] == SYNC0) else 0
-        self._emit_text(self.buf[:end - keep])
-        del self.buf[:end - keep]
+        if idx > 0:
+            self._emit_text(self.buf[:idx])
+            del self.buf[:idx]
+            self._drain()
+            return
+        # 没有同步字或只有碎片：全部作为文本上交并清空
+        self._emit_text(self.buf)
+        self.buf.clear()
 
     # ---- 输入 ----
     def feed(self, data):
