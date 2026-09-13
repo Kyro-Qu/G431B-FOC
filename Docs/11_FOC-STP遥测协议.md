@@ -118,7 +118,8 @@ CLI 回显仍以 **裸 ASCII** 发送（不封 `TEXT` 帧），保证 PuTTY/串�
 
 | 命令 | 作用 |
 | --- | --- |
-| `log 0/1` | 波形流开/关（同 `telem enable`）。STATUS 心跳不受影响 |
+| `wave 0/1` | 波形流开/关（静默响应模式，返回 `wave=0/1 telem=0/1`，推荐上位机示波器使用）。STATUS 心跳不受影响 |
+| `log 0/1` | 波形流开/关（同 `telem enable`，返回 `telem=0/1`）。STATUS 心跳不受影响 |
 | `telem` | 打印 `enable / mask / rate` |
 | `telem mask <hex\|dec>` | 设置订阅掩码；popcount > 16 时拒绝并回 `ACK LIMITED`，保持旧掩码 |
 | `telem rate <hz>` | 波形速率 10..500 Hz；`16000/hz` 非整除时向下取整分频并 `ACK LIMITED`，回传真实速率 |
