@@ -1316,8 +1316,20 @@ static void cmd_execute(char *line)
         } else if ((strcmp(arg1, "enable") == 0) && (has_val2 != 0U)) {
             g_m0_anticog.enable = (val2 != 0.0f) ? 1U : 0U;
             foc_cmd_print("M0 acog enable=%u\r\n", (unsigned)g_m0_anticog.enable);
+        } else if (strcmp(arg1, "dump") == 0) {
+            /* 导出 144 点齿槽补偿表，每行: [idx] deg iq_ff_hex */
+            uint16_t idx;
+            foc_cmd_print("acog dump start pts=%u\r\n", (unsigned)FOC_ANTICOG_POINTS);
+            for (idx = 0U; idx < FOC_ANTICOG_POINTS; idx++) {
+                float deg = (float)idx * (360.0f / (float)FOC_ANTICOG_POINTS);
+                foc_cmd_print("%u %.1f %08x\r\n",
+                              (unsigned)idx,
+                              (double)deg,
+                              (unsigned)*(uint32_t *)&g_m0_anticog.table[idx]);
+            }
+            foc_cmd_print("acog dump end\r\n");
         } else {
-            foc_cmd_print("err: acog [start|finish|enable <0|1>]\r\n");
+            foc_cmd_print("err: acog [start|finish|enable <0|1>|dump]\r\n");
         }
 
     } else if (strcmp(cmd, "telem") == 0) {
