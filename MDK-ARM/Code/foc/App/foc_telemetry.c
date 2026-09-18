@@ -331,14 +331,16 @@ void foc_telemetry_slow_tick(void)
             s_tx_state = FOC_TX_IDLE;
         }
     } else if (s_status_pending != 0U) {
+        uint8_t fault = m0->safety.fault_code;
+        if ((fault == (uint8_t)FOC_FAULT_CURRENT_SENSE) && (g_current_shunt_diag.fault_code != 0U)) {
+            fault = (uint8_t)(0x10U + g_current_shunt_diag.fault_code);
+        }
+        uint8_t cpu_pct = (g_foc_cpu_diag.load_pct > 100.0f) ? 100U : (uint8_t)g_foc_cpu_diag.load_pct;
+
         tx_len = foc_stp_pack_status(
             s_slow_buf, (uint16_t)sizeof(s_slow_buf), s_slow_seq++, now,
             (uint16_t)(g_foc_vbus_diag.voltage_v * 100.0f),
-            m0->safety.fault_code, g_current_shunt_diag.fault_code,
-            (uint8_t)m0->state, (uint8_t)m0->mode,
-            -128, /* 芯片温度暂未开启硬件 ADC 采样通道，标 -128 表示无效 */
-            (int16_t)m0->velocity_filt_rpm,
-            (int16_t)(m0->i_dq_filt.q * 100.0f)
+            fault, (uint8_t)m0->state, 0, cpu_pct
         );
         if (tx_len > 0U) {
             if (HAL_UART_Transmit_DMA(&huart2, s_slow_buf, tx_len) == HAL_OK) {

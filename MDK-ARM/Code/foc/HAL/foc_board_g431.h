@@ -84,6 +84,10 @@ typedef struct {
 
 extern volatile foc_vbus_diag_t g_foc_vbus_diag;
 
+/* 动态母线欠压与过压保护阈值（V） */
+extern volatile float g_foc_vbus_uv_threshold_v;
+extern volatile float g_foc_vbus_ov_threshold_v;
+
 /** 初始化 PA0 模拟输入及 ADC1 Regular 序列（保持电流注入序列不变） */
 void foc_board_vbus_init(void);
 /** 周期性触发并更新母线电压（主循环 100Hz 轮询调用） */

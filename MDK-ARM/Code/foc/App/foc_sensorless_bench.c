@@ -120,6 +120,7 @@ void foc_sensorless_bench_init(foc_motor_t *m)
 
     foc_sensorless_bench_reset_metrics();
     g_sensorless_bench.enabled = 1U;
+    g_sensorless_bench.shadow_enabled = 0U;   /* 影子对比默认关，`bench start` 再开 */
     g_sensorless_bench.steady_state = 0U;
 }
 
@@ -176,7 +177,10 @@ void foc_sensorless_bench_set_steady(uint8_t steady)
 
 void foc_sensorless_bench_enable(uint8_t en)
 {
-    g_sensorless_bench.enabled = en;
+    /* bench start/stop 只控制影子对比观测器。主观测器 (VESC / active_algo)
+     * 是角度仲裁的依赖，必须常开——否则 `bench stop` 会让无感接管失锁。 */
+    g_sensorless_bench.enabled = 1U;
+    g_sensorless_bench.shadow_enabled = (en != 0U) ? 1U : 0U;
     if (en != 0U) {
         foc_sensorless_bench_reset_metrics();
     }
@@ -688,34 +692,47 @@ void foc_sensorless_bench_update(foc_motor_t *m, float v_alpha, float v_beta,
         g_sensorless_bench.hfi_v_inj_beta = 0.0f;
     }
 
-    /* 3. 其余后台对比算法按槽轮询分频执行 (等效 5.3kHz 刷新率) */
-    switch (s_bench_slot) {
-    case 0U:
-        t0 = get_dwt_cycles();
-        update_obs1_ortega(&g_sensorless_bench, m, va_obs, vb_obs, i_alpha, i_beta, dt * 3.0f);
-        t1 = get_dwt_cycles();
-        g_sensorless_bench.obs1_ortega.exec_cycles = t1 - t0;
-        evaluate_metric(&g_sensorless_bench.obs1_ortega, theta_enc, is_steady);
-        break;
+    /* 3. 其余后台对比算法按槽轮询分频执行 (等效 5.3kHz 刷新率)。
+     * 默认只跑角度仲裁真正选用的那一个（active_algo），全套影子对比仅在
+     * `bench start` 后开启——实测省 ~30% 快环 CPU，消除 max>100% 的超周期。 */
+    {
+        uint8_t all = g_sensorless_bench.shadow_enabled;
+        uint8_t algo = g_angle_mgr.active_algo;
 
-    case 1U:
-        t0 = get_dwt_cycles();
-        update_obs3_sto_pll(&g_sensorless_bench, m, va_obs, vb_obs, i_alpha, i_beta, dt * 3.0f);
-        t1 = get_dwt_cycles();
-        g_sensorless_bench.obs3_sto_pll.exec_cycles = t1 - t0;
-        evaluate_metric(&g_sensorless_bench.obs3_sto_pll, theta_enc, is_steady);
-        break;
+        switch (s_bench_slot) {
+        case 0U:
+            if ((all != 0U) || (algo == SENSORLESS_ALGO_ORTEGA)) {
+                t0 = get_dwt_cycles();
+                update_obs1_ortega(&g_sensorless_bench, m, va_obs, vb_obs, i_alpha, i_beta, dt * 3.0f);
+                t1 = get_dwt_cycles();
+                g_sensorless_bench.obs1_ortega.exec_cycles = t1 - t0;
+                evaluate_metric(&g_sensorless_bench.obs1_ortega, theta_enc, is_steady);
+            }
+            break;
 
-    case 2U:
-        t0 = get_dwt_cycles();
-        update_obs4_sto_cordic(&g_sensorless_bench, m, dt * 3.0f);
-        t1 = get_dwt_cycles();
-        g_sensorless_bench.obs4_sto_cordic.exec_cycles = t1 - t0;
-        evaluate_metric(&g_sensorless_bench.obs4_sto_cordic, theta_enc, is_steady);
-        break;
+        case 1U:
+            if ((all != 0U) || (algo == SENSORLESS_ALGO_STO)) {
+                t0 = get_dwt_cycles();
+                update_obs3_sto_pll(&g_sensorless_bench, m, va_obs, vb_obs, i_alpha, i_beta, dt * 3.0f);
+                t1 = get_dwt_cycles();
+                g_sensorless_bench.obs3_sto_pll.exec_cycles = t1 - t0;
+                evaluate_metric(&g_sensorless_bench.obs3_sto_pll, theta_enc, is_steady);
+            }
+            break;
 
-    default:
-        break;
+        case 2U:
+            if (all != 0U) {
+                t0 = get_dwt_cycles();
+                update_obs4_sto_cordic(&g_sensorless_bench, m, dt * 3.0f);
+                t1 = get_dwt_cycles();
+                g_sensorless_bench.obs4_sto_cordic.exec_cycles = t1 - t0;
+                evaluate_metric(&g_sensorless_bench.obs4_sto_cordic, theta_enc, is_steady);
+            }
+            break;
+
+        default:
+            break;
+        }
     }
 
     s_bench_slot = (s_bench_slot + 1U) % 3U;

@@ -91,21 +91,16 @@ void foc_motor_blackbox_resume(void)
     s_blackbox_frozen = 0U;
 }
 
-void foc_motor_blackbox_dump(float *out_u, float *out_w,
-                             float *out_th, float *out_iq,
-                             float *out_id)
+/* 按时间序（最旧→最新）读取第 i 拍。不再整表拷贝：调用方逐拍打印即可，
+ * 省掉 foc_cmd 里 10 KB 的镜像缓冲（RAM 从 640B 余量回到 ~10.9KB）。 */
+void foc_motor_blackbox_get(uint16_t i, foc_blackbox_sample_t *out)
 {
-    uint16_t i;
-    for (i = 0U; i < FOC_BLACKBOX_LEN; i++) {
-        uint16_t idx = (s_blackbox_head + i) % FOC_BLACKBOX_LEN;
-        out_u[i] = s_blackbox_u[idx];
-        out_w[i] = s_blackbox_w[idx];
-        out_th[i] = s_blackbox_th[idx];
-        out_iq[i] = s_blackbox_iq[idx];
-        if (out_id != 0) {
-            out_id[i] = s_blackbox_id[idx];
-        }
-    }
+    uint16_t idx = (uint16_t)((s_blackbox_head + i) % FOC_BLACKBOX_LEN);
+    out->iu = s_blackbox_u[idx];
+    out->iw = s_blackbox_w[idx];
+    out->theta_e = s_blackbox_th[idx];
+    out->iq = s_blackbox_iq[idx];
+    out->id = s_blackbox_id[idx];
 }
 
 uint8_t foc_motor_blackbox_active(void)

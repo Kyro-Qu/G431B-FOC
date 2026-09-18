@@ -267,6 +267,7 @@ static void cmd_print_help(void)
         "  rpm [RPM]          V/F speed query/set\r\n"
         "  vf [slope <V/RPM>] show/set V/F curve\r\n"
         "  limit [A]           show/set soft current limit\r\n"
+        "  vbus [uv|ov <V>]    show/set bus undervolt/overvolt protection\r\n"
         " Tuning:\r\n"
         "  current [bw <rad/s>]\r\n"
         "  tune [angle_delay|fw|pll ...] (RAM only)\r\n"
@@ -292,7 +293,7 @@ static void cmd_print_version(void)
 
     foc_cmd_print(
         "firmware=" FOC_FW_NAME " version=" FOC_FW_VERSION
-        " board=" FOC_BOARD_NAME " cli=" FOC_CLI_VERSION
+        " board=" FOC_BOARD_NAME " cli=" FOC_CLI_VERSION " stp=1.1"
         " build=%s %s\r\n"
         "M%u pole_pairs=%.0f encoder_cpr=%u udc=%.2fV"
         " max_rpm=%.0f limit=%.2fA\r\n",
@@ -1037,6 +1038,43 @@ static void cmd_execute(char *line)
                           (double)m->params.hard_current_a);
         }
 
+    } else if (strcmp(cmd, "vbus") == 0) {
+        if (arg1 == 0) {
+            foc_cmd_print("vbus=%.2fV (raw=%u %s) uv=%.2fV ov=%.2fV\r\n",
+                          (double)g_foc_vbus_diag.voltage_v,
+                          (unsigned)g_foc_vbus_diag.raw_adc,
+                          (g_foc_vbus_diag.valid != 0U) ? "OK" : "INIT",
+                          (double)g_foc_vbus_uv_threshold_v,
+                          (double)g_foc_vbus_ov_threshold_v);
+        } else if ((strcmp(arg1, "uv") == 0) && (has_val2 != 0U) && (arg3 == 0) &&
+                   (val2 >= 5.0f) && (val2 <= 50.0f) &&
+                   (val2 < g_foc_vbus_ov_threshold_v)) {
+            g_foc_vbus_uv_threshold_v = val2;
+            foc_cmd_print_resp("vbus uv=%.2fV ov=%.2fV\r\n",
+                               (double)g_foc_vbus_uv_threshold_v,
+                               (double)g_foc_vbus_ov_threshold_v);
+        } else if ((strcmp(arg1, "ov") == 0) && (has_val2 != 0U) && (arg3 == 0) &&
+                   (val2 >= 8.0f) && (val2 <= 60.0f) &&
+                   (val2 > g_foc_vbus_uv_threshold_v)) {
+            g_foc_vbus_ov_threshold_v = val2;
+            foc_cmd_print_resp("vbus uv=%.2fV ov=%.2fV\r\n",
+                               (double)g_foc_vbus_uv_threshold_v,
+                               (double)g_foc_vbus_ov_threshold_v);
+        } else if ((has_val1 != 0U) && (has_val2 != 0U) && (arg3 == 0) &&
+                   (val1 >= 5.0f) && (val1 <= 50.0f) &&
+                   (val2 >= 8.0f) && (val2 <= 60.0f) &&
+                   (val1 < val2)) {
+            g_foc_vbus_uv_threshold_v = val1;
+            g_foc_vbus_ov_threshold_v = val2;
+            foc_cmd_print_resp("vbus uv=%.2fV ov=%.2fV\r\n",
+                               (double)g_foc_vbus_uv_threshold_v,
+                               (double)g_foc_vbus_ov_threshold_v);
+        } else {
+            foc_cmd_print("err: vbus [uv <5.0..%.1fV> | ov <%.1f..60.0V>]\r\n",
+                          (double)(g_foc_vbus_ov_threshold_v - 0.5f),
+                          (double)(g_foc_vbus_uv_threshold_v + 0.5f));
+        }
+
     } else if (strcmp(cmd, "ident") == 0) {
         if ((arg1 != 0) && (strcmp(arg1, "apply") == 0) && (arg2 == 0)) {
             if (foc_ident_apply(m) != 0U) {
@@ -1202,20 +1240,20 @@ static void cmd_execute(char *line)
         }
 
     } else if (strcmp(cmd, "blackbox") == 0) {
-        /* 导出故障黑匣子：512 拍 x (iu iw th iq id)，十六进制浮点 */
+        /* 导出故障黑匣子：512 拍 x (iu iw th iq id)，十六进制浮点。
+         * 逐拍零拷贝读取，不再镜像整表（曾占 10 KB 静态 RAM）。 */
         if (foc_motor_blackbox_active() != 0U) {
-            static float bb_u[512], bb_w[512], bb_th[512], bb_iq[512];
-            static float bb_id[512];
+            foc_blackbox_sample_t s;
             uint16_t k;
-            foc_motor_blackbox_dump(bb_u, bb_w, bb_th, bb_iq, bb_id);
-            for (k = 0U; k < 512U; k++) {
+            for (k = 0U; k < FOC_BLACKBOX_LEN; k++) {
+                foc_motor_blackbox_get(k, &s);
                 foc_cmd_print("%d %08x %08x %08x %08x %08x\r\n",
                               (int)k,
-                              (unsigned)*(uint32_t *)&bb_u[k],
-                              (unsigned)*(uint32_t *)&bb_w[k],
-                              (unsigned)*(uint32_t *)&bb_th[k],
-                              (unsigned)*(uint32_t *)&bb_iq[k],
-                              (unsigned)*(uint32_t *)&bb_id[k]);
+                              (unsigned)*(uint32_t *)&s.iu,
+                              (unsigned)*(uint32_t *)&s.iw,
+                              (unsigned)*(uint32_t *)&s.theta_e,
+                              (unsigned)*(uint32_t *)&s.iq,
+                              (unsigned)*(uint32_t *)&s.id);
             }
         } else {
             foc_cmd_print("blackbox inactive (no fault since boot/clear)\r\n");
@@ -1634,7 +1672,7 @@ void foc_cmd_task(void)
         primask = foc_critical_enter();
         if (rx_queue_tail == rx_queue_head) {
             foc_critical_exit(primask);
-            return;
+            break;
         }
         ch = rx_queue[rx_queue_tail];
         rx_queue_tail = (uint16_t)((rx_queue_tail + 1U) % CMD_RX_QUEUE_SIZE);
@@ -1651,10 +1689,60 @@ void foc_cmd_task(void)
         }
     }
 
-    memcpy(exec_buf, line_buf, line_len);
-    exec_buf[line_len] = '\0';
-    line_len = 0U;
-    cmd_execute(exec_buf);
+    if (line_complete != 0U) {
+        memcpy(exec_buf, line_buf, line_len);
+        exec_buf[line_len] = '\0';
+        line_len = 0U;
+        cmd_execute(exec_buf);
+        /* 命令结束符 EOT(0x04)：上位机据此立即结束本次回显捕获，
+         * 不再靠固定 300~500ms 死等。wave 静默模式下不发（不打断波形 DMA）。 */
+        if (s_wave_silent == 0U) {
+            foc_cmd_print("\x04");
+        }
+    } else {
+        /* 当波形流未启用 (s_wave_silent == 0 且 telem_enable == 0) 时，
+         * 主循环按 5Hz (200ms) 自动输出当前模式的核心跟踪/运行信息。
+         * 一旦用户开启波形 (wave 1)，本输出完全静默，避免 DMA 冲突与终端刷屏。 */
+        static uint32_t s_last_cli_monitor_tick = 0U;
+        uint32_t now = HAL_GetTick();
+        if ((s_wave_silent == 0U) && (foc_telemetry_get_enable() == 0U) &&
+            ((uint32_t)(now - s_last_cli_monitor_tick) >= 200U)) {
+            const foc_motor_t *m = foc_app_motor(cur_axis);
+            s_last_cli_monitor_tick = now;
+
+            if (m->state == FOC_STATE_RUN) {
+                switch (m->mode) {
+                case FOC_MODE_POSITION: {
+                    float pos_err = (m->pos_origin_rad + m->target) - m->position_rad;
+                    foc_cmd_print("[POS] tgt=%.3frad pos=%.3frad err=%.3frad iq=%.2fA\r\n",
+                                  (double)m->target, (double)m->position_rad,
+                                  (double)pos_err, (double)m->iq_ref);
+                    break;
+                }
+                case FOC_MODE_VELOCITY: {
+                    float vel_err = m->vel_ref_rpm - m->velocity_filt_rpm;
+                    foc_cmd_print("[VEL] tgt=%.1frpm vel=%.1frpm err=%.1frpm iq=%.2fA\r\n",
+                                  (double)m->vel_ref_rpm, (double)m->velocity_filt_rpm,
+                                  (double)vel_err, (double)m->iq_ref);
+                    break;
+                }
+                case FOC_MODE_OPENLOOP_VF:
+                    foc_cmd_print("[VF] rpm=%.1f target_vq=%.2fV applied=%.2fV\r\n",
+                                  (double)g_m0_openloop_rpm_applied,
+                                  (double)g_m0_vf_vq_target,
+                                  (double)g_m0_openloop_vq_applied);
+                    break;
+                case FOC_MODE_TORQUE:
+                    foc_cmd_print("[IQ] tgt=%.2fA iq=%.2fA vd=%.2fV vq=%.2fV\r\n",
+                                  (double)m->iq_ref, (double)m->i_dq_filt.q,
+                                  (double)m->v_dq.d, (double)m->v_dq.q);
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+    }
 }
 
 /* DMA idle/half/complete events only move newly received bytes into the queue.

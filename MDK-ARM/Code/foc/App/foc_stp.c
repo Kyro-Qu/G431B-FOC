@@ -141,12 +141,11 @@ uint16_t foc_stp_pack_wave(uint8_t *buf, uint16_t buf_size, uint16_t seq,
 
 uint16_t foc_stp_pack_status(uint8_t *buf, uint16_t buf_size, uint16_t seq,
                              uint32_t timestamp_ms, uint16_t vbus_cvolts,
-                             uint8_t motor_fault, uint8_t shunt_fault,
-                             uint8_t state, uint8_t mode, int8_t temp_c,
-                             int16_t rpm_est, int16_t iq_est_ca)
+                             uint8_t fault_code, uint8_t state,
+                             int8_t temp_c, uint8_t cpu_load_pct)
 {
-    const uint8_t payload_len = 15U;
-    const uint16_t total_len = (uint16_t)((uint16_t)FOC_STP_OVERHEAD + (uint16_t)payload_len); /* 23 字节 */
+    const uint8_t payload_len = 10U;
+    const uint16_t total_len = (uint16_t)((uint16_t)FOC_STP_OVERHEAD + (uint16_t)payload_len); /* 18 字节 */
     uint16_t crc;
 
     if ((buf == 0) || (buf_size < total_len)) {
@@ -160,20 +159,17 @@ uint16_t foc_stp_pack_status(uint8_t *buf, uint16_t buf_size, uint16_t seq,
     buf[3] = payload_len;
     write_u16_le(&buf[4], seq);
 
-    /* Payload (15 字节) */
+    /* Payload (10 字节) */
     write_u32_le(&buf[6], timestamp_ms);
     write_u16_le(&buf[10], vbus_cvolts);
-    buf[12] = motor_fault;
-    buf[13] = shunt_fault;
-    buf[14] = state;
-    buf[15] = mode;
-    buf[16] = (uint8_t)temp_c;
-    write_u16_le(&buf[17], (uint16_t)rpm_est);
-    write_u16_le(&buf[19], (uint16_t)iq_est_ca);
+    buf[12] = fault_code;
+    buf[13] = state;
+    buf[14] = (uint8_t)temp_c;
+    buf[15] = cpu_load_pct;
 
     /* CRC16 */
     crc = foc_stp_crc16(&buf[2], (uint16_t)(4U + payload_len));
-    write_u16_le(&buf[21], crc);
+    write_u16_le(&buf[16], crc);
 
     return total_len;
 }

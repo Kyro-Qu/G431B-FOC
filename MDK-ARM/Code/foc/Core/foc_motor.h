@@ -229,10 +229,16 @@ void foc_motor_clear_fault(foc_motor_t *m);
 /** 冻结/恢复快环逐拍记录（fault 自动冻结，clear_fault 自动恢复） */
 void foc_motor_blackbox_freeze(void);
 void foc_motor_blackbox_resume(void);
-/** 导出环形缓冲：故障前 512 拍（32ms）的 iu/iw/theta_e/iq/id */
-void foc_motor_blackbox_dump(float *out_u, float *out_w,
-                             float *out_th, float *out_iq,
-                             float *out_id);
+/** 单拍黑匣子样本 */
+typedef struct {
+    float iu;
+    float iw;
+    float theta_e;
+    float iq;
+    float id;
+} foc_blackbox_sample_t;
+/** 按时间序读取第 i 拍（0=最旧, FOC_BLACKBOX_LEN-1=最新），零拷贝 */
+void foc_motor_blackbox_get(uint16_t i, foc_blackbox_sample_t *out);
 /** 1 = 已冻结（故障数据有效） */
 uint8_t foc_motor_blackbox_active(void);
 

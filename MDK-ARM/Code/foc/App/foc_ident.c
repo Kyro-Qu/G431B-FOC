@@ -207,7 +207,7 @@ void foc_ident_start_mode(foc_motor_t *m, foc_ident_mode_t mode)
 
     switch (mode) {
     case FOC_IDENT_MODE_FULL:
-        foc_cmd_print("ident start: Full Suite (Rs->Ls->Pp->Flux, ~6s)\r\n");
+        foc_cmd_print("ident start: Full Suite (Rs->Ld->Lq->Pp->Flux, ~7s)\r\n");
         break;
     case FOC_IDENT_MODE_RS_LS:
         foc_cmd_print("ident start: Rs & Ls only (~2s, rotor locks)\r\n");
@@ -325,7 +325,7 @@ void foc_ident_task(void)
             ident_result.rs_ohm = (rs_v_sum / (float)rs_samples) / i_avg;
             ident_result.test_current_a = i_avg;
 
-            if (ident_mode == FOC_IDENT_MODE_LD_LQ) {
+            if ((ident_mode == FOC_IDENT_MODE_LD_LQ) || (ident_mode == FOC_IDENT_MODE_FULL)) {
                 /* 进入 Ld 测量：先撤压，由钩子接管 d 轴高频方波 */
                 foc_motor_openloop_hold(m, 0.0f, 0.0f, 0.0f);
                 ls_vs_sum = 0.0f;
@@ -422,9 +422,16 @@ void foc_ident_task(void)
                           (double)(ident_result.saliency_ratio * 100.0f),
                           (double)(ident_result.lq_henry / ident_result.ld_henry));
 
-            ident_cleanup(m);
-            ident_set_state(FOC_IDENT_DONE);
-            foc_cmd_print("ident DONE: Ld/Lq ready.\r\n");
+            if (ident_mode == FOC_IDENT_MODE_LD_LQ) {
+                ident_cleanup(m);
+                ident_set_state(FOC_IDENT_DONE);
+                foc_cmd_print("ident DONE: Ld/Lq ready.\r\n");
+            } else {
+                /* 全套辨识顺利过渡到极对数测量：按 Rs * 1.5A 计算对齐电压 */
+                pp_hold_v = foc_clampf(ident_result.rs_ohm * 1.5f, 0.20f, 0.50f);
+                ident_tick = now;
+                ident_set_state(FOC_IDENT_PP_ALIGN);
+            }
         } else if ((uint32_t)(now - ident_tick) >= 2000U) {
             ident_fail("Lq timeout");
         }

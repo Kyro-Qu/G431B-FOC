@@ -46,7 +46,9 @@ typedef struct {
 } foc_bench_obs_metrics_t;
 
 typedef struct {
-    uint8_t enabled;        /* 评测基准使能标记 */
+    uint8_t enabled;        /* 评测基准使能标记（VESC 主观测器始终随快环运行） */
+    uint8_t shadow_enabled; /* 影子对比观测器 (Ortega/STO-PLL/STO-CORDIC) 使能：
+                             * 默认 0，仅 `bench start` 后开启——省 ~30% 快环 CPU */
     uint8_t steady_state;   /* 是否处于稳态采样窗口 (丢弃启停与变速过渡) */
     uint8_t obs_deadtime_comp_enable; /* 观测器输入端电压死区修正使能 (默认 1) */
     float deadtime_comp_v;  /* 死区补偿电压幅值 (默认 0.17V) */

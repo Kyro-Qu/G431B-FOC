@@ -77,7 +77,7 @@ def _payload_len_valid(ftype, length):
     if ftype == TYPE_WAVE:
         return 8 <= length <= 8 + 4 * MAX_WAVE_CHANNELS and (length - 8) % 4 == 0
     if ftype == TYPE_STATUS:
-        return length == 15
+        return length == 10 or length == 15
     if ftype == TYPE_EVENT:
         return length == 11
     if ftype == TYPE_TEXT:
@@ -204,12 +204,20 @@ class StpStreamDecoder(object):
                 "channels": {CHANNEL_NAMES[b]: v for b, v in zip(bits, vals)},
             })
         elif ftype == TYPE_STATUS:
-            ts, vbus, mf, sf, state, mode, temp, rpm, iq = struct.unpack("<IHBBBBbhh", payload)
-            self.status.append({
-                "seq": seq, "ts": ts, "vbus": vbus / 100.0,
-                "motor_fault": mf, "shunt_fault": sf, "state": state, "mode": mode,
-                "temp": temp, "rpm": rpm, "iq": iq / 100.0,
-            })
+            if len(payload) == 10:
+                ts, vbus, fault, state, temp, cpu = struct.unpack("<IHBBbB", payload)
+                self.status.append({
+                    "seq": seq, "ts": ts, "vbus": vbus / 100.0,
+                    "fault_code": fault, "motor_fault": fault, "shunt_fault": 0,
+                    "state": state, "temp": temp, "cpu_pct": cpu
+                })
+            else:
+                ts, vbus, mf, sf, state, mode, temp, rpm, iq = struct.unpack("<IHBBBBbhh", payload)
+                self.status.append({
+                    "seq": seq, "ts": ts, "vbus": vbus / 100.0,
+                    "motor_fault": mf, "shunt_fault": sf, "state": state, "mode": mode,
+                    "temp": temp, "rpm": rpm, "iq": iq / 100.0,
+                })
         elif ftype == TYPE_EVENT:
             ts, eid, mf, sf, detail = struct.unpack("<IBBBI", payload)
             self.events.append({

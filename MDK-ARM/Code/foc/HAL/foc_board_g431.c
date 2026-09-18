@@ -311,6 +311,9 @@ volatile foc_vbus_diag_t g_foc_vbus_diag = {
     .sample_count = 0U
 };
 
+volatile float g_foc_vbus_uv_threshold_v = FOC_VBUS_UNDERVOLT_THRESHOLD_V;
+volatile float g_foc_vbus_ov_threshold_v = FOC_VBUS_OVERVOLT_THRESHOLD_V;
+
 static uint32_t s_vbus_last_tick = 0U;
 
 void foc_board_vbus_init(void)

@@ -69,9 +69,8 @@ uint16_t foc_stp_pack_wave(uint8_t *buf, uint16_t buf_size, uint16_t seq,
 
 uint16_t foc_stp_pack_status(uint8_t *buf, uint16_t buf_size, uint16_t seq,
                              uint32_t timestamp_ms, uint16_t vbus_cvolts,
-                             uint8_t motor_fault, uint8_t shunt_fault,
-                             uint8_t state, uint8_t mode, int8_t temp_c,
-                             int16_t rpm_est, int16_t iq_est_ca);
+                             uint8_t fault_code, uint8_t state,
+                             int8_t temp_c, uint8_t cpu_load_pct);
 
 uint16_t foc_stp_pack_event(uint8_t *buf, uint16_t buf_size, uint16_t seq,
                             uint32_t timestamp_ms, uint8_t event_id,

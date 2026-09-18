@@ -346,7 +346,7 @@ void foc_app_task(void)
         uint32_t now = HAL_GetTick();
         float vbus = g_foc_vbus_diag.voltage_v;
 
-        if (vbus < FOC_VBUS_UNDERVOLT_THRESHOLD_V) {
+        if (vbus < g_foc_vbus_uv_threshold_v) {
             if (s_uv_start_tick == 0U) {
                 s_uv_start_tick = now;
             } else if ((now - s_uv_start_tick) >= FOC_VBUS_FAULT_TIMEOUT_MS) {
@@ -356,7 +356,7 @@ void foc_app_task(void)
             s_uv_start_tick = 0U;
         }
 
-        if (vbus > FOC_VBUS_OVERVOLT_THRESHOLD_V) {
+        if (vbus > g_foc_vbus_ov_threshold_v) {
             if (s_ov_start_tick == 0U) {
                 s_ov_start_tick = now;
             } else if ((now - s_ov_start_tick) >= FOC_VBUS_FAULT_TIMEOUT_MS) {
