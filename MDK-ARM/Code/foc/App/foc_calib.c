@@ -4,6 +4,7 @@
  */
 
 #include "foc_calib.h"
+#include "foc_cmd.h"
 #include "foc_config.h"
 #include "foc_utils.h"
 #include "main.h"
@@ -110,6 +111,7 @@ static void calib_fail(foc_fault_t fault)
     if (m != 0) {
         calib_checkpoint(SYSTEM_CHECKPOINT_CALIB_FAIL);
     }
+    foc_cmd_print("M0 calib FAIL: fault=%u\r\n", (unsigned)fault);
 }
 
 /* ---------------- API ---------------- */
@@ -305,11 +307,16 @@ void foc_calib_task(void)
             if (m->state == FOC_STATE_IDLE) {
                 calib_set_state(FOC_CALIB_DONE);
                 calib_checkpoint(SYSTEM_CHECKPOINT_CALIB_DONE);
+                foc_cmd_print("M0 calib DONE offset=%.4frad dir=%d\r\n",
+                              (double)m->calib.electrical_offset_rad,
+                              (int)m->calib.direction);
             } else {
                 /* 收尾瞬间被打进 FAULT：角度结果仍有效（valid=1），
                  * 但本次会话按失败收场，故障码留给用户 fault clear 清除 */
                 calib_set_state(FOC_CALIB_FAIL);
                 calib_checkpoint(SYSTEM_CHECKPOINT_CALIB_FAIL);
+                foc_cmd_print("M0 calib FAIL: fault=%u\r\n",
+                              (unsigned)m->safety.fault_code);
             }
         } else if (calib_elapsed(now, calib_tick, FOC_CALIB_SEARCH_TIMEOUT_MS)) {
             calib_fail(FOC_FAULT_CALIB_TIMEOUT);
