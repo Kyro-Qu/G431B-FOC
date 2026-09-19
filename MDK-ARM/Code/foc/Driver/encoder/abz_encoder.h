@@ -142,6 +142,9 @@ void abz_encoder_set_zero_on_index(uint8_t enable);
 /** 消费一次已锁存的 Z 事件，可选返回其单圈计数值。 */
 uint8_t abz_encoder_consume_index(int32_t *position_cnt);
 
+/** 获取当前 16kHz->1kHz 分频时隙（0..15），用于全系统多速率任务锁相错峰调度 */
+uint16_t abz_encoder_get_sample_div(void);
+
 /** 发生过 Z 事件或显式清零后返回非零。 */
 uint8_t abz_encoder_is_calibrated(void);
 

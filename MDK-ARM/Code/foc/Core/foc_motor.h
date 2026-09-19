@@ -229,6 +229,8 @@ void foc_motor_clear_fault(foc_motor_t *m);
 /** 冻结/恢复快环逐拍记录（fault 自动冻结，clear_fault 自动恢复） */
 void foc_motor_blackbox_freeze(void);
 void foc_motor_blackbox_resume(void);
+/** 黑匣子深度（拍数），CLI 导出与 foc_motor.c 环形缓冲共用 */
+#define FOC_BLACKBOX_LEN 512U
 /** 单拍黑匣子样本 */
 typedef struct {
     float iu;

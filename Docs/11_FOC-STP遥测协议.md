@@ -46,19 +46,17 @@
 
 ### 2.2 `STATUS`（0x2）— 10 Hz 状态心跳，与波形开关无关、上电即发
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `timestamp_ms` | uint32 | MCU 毫秒 |
-| `vbus_cvolts` | uint16 | 母线电压，0.01 V |
-| `motor_fault` | uint8 | `foc_motor` `safety.fault_code` |
-| `shunt_fault` | uint8 | `current_shunt` 故障码 |
-| `state` | uint8 | 0 IDLE / 1 RUN / 2 CALIB / 3 FAULT |
-| `mode` | uint8 | 0 vf / 1 iq / 2 vel / 3 pos |
-| `temp_c` | int8 | 芯片温度 °C，`-128` = 未采样 |
-| `rpm_est` | int16 | 低频转速，1 RPM |
-| `iq_est_ca` | int16 | 低频 Iq，0.01 A |
+| 字段 | 类型 | 说明 | 上位机消费端 |
+| --- | --- | --- | --- |
+| `timestamp_ms` | uint32 | MCU 毫秒时间戳 | 顶栏心跳呼吸灯 + 运行时长 `HH:MM:SS` |
+| `vbus_cvolts` | uint16 | 母线电压，0.01 V (厘伏) | 顶栏供电徽章 + 设备页电压展示 + 仪表盘 |
+| `fault_code` | uint8 | 全局统一合并故障码 (0 无故障, 1..15 算法保护, 16..47 采样硬件故障) | 顶栏状态指示灯 + 故障弹窗 + 诊断文本 |
+| `state` | uint8 | 运行状态机 (0 IDLE / 1 RUN / 2 CALIB / 3 FAULT) | 顶栏主状态灯 + 使能/失能联动互锁 |
+| `temp_c` | int8 | 芯片温度 °C (0 为暂未采样) | 仪表盘/设备页温度指示 |
+| `cpu_load_pct` | uint8 | CPU 快环峰值负荷率 (0..100%) | 顶栏与设备页算力占用实时指示 |
 
-`LEN = 15`，总长 23 B。
+`LEN = 10`，总长 18 B（相比原 15B 节省近 22% 慢速通道带宽）。
+解耦原则：转速、电流等高频控制量由 500Hz WAVE 驱动，STATUS 仅承担系统生命体征与全局安全监控。
 
 ### 2.3 `EVENT`（0x3）— 瞬态单触发
 

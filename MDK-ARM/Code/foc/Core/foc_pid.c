@@ -85,6 +85,7 @@ void foc_pid_set_limit(foc_pid_t *pid, float out_limit)
 void foc_lpf_init(foc_lpf_t *lpf, float tf)
 {
     lpf->tf = tf;
+    lpf->alpha = 0.0f;
     lpf->y = 0.0f;
 }
 
@@ -94,7 +95,10 @@ float foc_lpf_update(foc_lpf_t *lpf, float x, float dt)
         lpf->y = x;
         return x;
     }
-    lpf->y += (dt / (lpf->tf + dt)) * (x - lpf->y);
+    if (lpf->alpha <= 0.0f) {
+        lpf->alpha = dt / (lpf->tf + dt);
+    }
+    lpf->y += lpf->alpha * (x - lpf->y);
     return lpf->y;
 }
 
@@ -144,22 +148,11 @@ void foc_notch_reset(foc_notch_t *n)
     n->z2 = 0.0f;
 }
 
-static float foc_median3(float a, float b, float c)
+static inline float foc_median3(float a, float b, float c)
 {
-    if (a > b) {
-        float t = a;
-        a = b;
-        b = t;
-    }
-    if (b > c) {
-        float t = b;
-        b = c;
-        c = t;
-    }
-    if (a > b) {
-        b = a;
-    }
-    return b;
+    float max_ab = (a > b) ? a : b;
+    float min_ab = (a > b) ? b : a;
+    return (c > max_ab) ? max_ab : ((c < min_ab) ? min_ab : c);
 }
 
 void foc_speed_filter_init(foc_speed_filter_t *filter,

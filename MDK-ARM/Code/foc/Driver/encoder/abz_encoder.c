@@ -512,3 +512,8 @@ uint8_t abz_encoder_is_calibrated(void)
 {
     return enc.is_calibrated;
 }
+
+uint16_t abz_encoder_get_sample_div(void)
+{
+    return enc.velocity_sample_div;
+}

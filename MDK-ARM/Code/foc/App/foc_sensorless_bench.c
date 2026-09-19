@@ -282,10 +282,17 @@ static void update_obs2_vesc(foc_sensorless_bench_t *b, foc_motor_t *m,
 {
     float rs = m->params.rs_ohm;
     float ls = m->params.ls_henry;
-    /* 真实永磁磁链基准: 标称约 0.80 mWb */
-    float lambda = (m->params.ke > 0.01f) ? (m->params.ke / (1.73205f * _2PI * m->params.pole_pairs * 1000.0f / 60.0f))
-                                          : 0.00080f;
-    float lambda_sq = lambda * lambda;
+    /* 真实永磁磁链基准: 标称约 0.80 mWb，静态缓存避免每拍除法 */
+    static float s_vesc_cached_lambda = 0.0f;
+    static float s_vesc_cached_lambda_sq = 0.0f;
+    if (s_vesc_cached_lambda <= 0.0f) {
+        s_vesc_cached_lambda = (m->params.ke > 0.01f)
+            ? (m->params.ke / (1.73205f * _2PI * m->params.pole_pairs * 1000.0f / 60.0f))
+            : 0.00080f;
+        s_vesc_cached_lambda_sq = s_vesc_cached_lambda * s_vesc_cached_lambda;
+    }
+    float lambda = s_vesc_cached_lambda;
+    float lambda_sq = s_vesc_cached_lambda_sq;
     float gamma = 1600.0f;
 
     float L_ia = ls * ia;
@@ -299,8 +306,8 @@ static void update_obs2_vesc(foc_sensorless_bench_t *b, foc_motor_t *m,
         (g_angle_mgr.state == FOC_ANGLE_SENSORED) &&
         (g_angle_mgr.enc_health == ENCODER_HEALTH_NORMAL) &&
         (fabsf(m->velocity_observer_rpm) < 250.0f)) {
-        float sin_th = sinf(theta_enc);
-        float cos_th = cosf(theta_enc);
+        float sin_th = foc_sin(theta_enc);
+        float cos_th = foc_cos(theta_enc);
         b->vesc_x1 = L_ia + (lambda * cos_th);
         b->vesc_x2 = L_ib + (lambda * sin_th);
         b->vesc_pll_pos = theta_enc;
@@ -335,7 +342,7 @@ static void update_obs2_vesc(foc_sensorless_bench_t *b, foc_motor_t *m,
     b->obs2_vesc.flux_center_b += (eta_b - b->obs2_vesc.flux_center_b) * (dt * 15.0f);
 
     if (mag_sq > (lambda_sq * 1e-4f)) {
-        float theta_raw = atan2f(eta_b, eta_a);
+        float theta_raw = foc_cordic_calc_phase(eta_b, eta_a);
         if (theta_raw < 0.0f) {
             theta_raw += _2PI;
         }
@@ -576,9 +583,10 @@ static void evaluate_metric(foc_bench_obs_metrics_t *m, float theta_enc, uint8_t
     /* 1. 独立极性与偏置校正 */
     float obs_th = m->theta_e;
     if (m->direction < 0) {
-        obs_th = foc_wrap_0_2pi(_2PI - obs_th);
+        obs_th = foc_wrap_0_2pi(_2PI - obs_th + m->theta_offset);
+    } else {
+        obs_th = foc_wrap_0_2pi(obs_th + m->theta_offset);
     }
-    obs_th = foc_wrap_0_2pi(obs_th + m->theta_offset);
 
     /* 2. 计算与真实编码器电角度误差 */
     float err_rad = wrap_pm_pi(obs_th - theta_enc);
@@ -639,7 +647,9 @@ void foc_sensorless_bench_update(foc_motor_t *m, float v_alpha, float v_beta,
     uint32_t t0, t1;
     uint8_t is_steady = g_sensorless_bench.steady_state;
 
-    if (g_sensorless_bench.enabled == 0U) {
+    /* 有感主控常态且未开启影子对比评测时，完全无需逐拍运行无感观测器与死区/评测计算，零算力浪费 */
+    if ((g_sensorless_bench.enabled == 0U) ||
+        ((g_angle_mgr.mode == FOC_FEEDBACK_SENSORED_PRIMARY) && (g_sensorless_bench.shadow_enabled == 0U))) {
         return;
     }
 
@@ -655,15 +665,13 @@ void foc_sensorless_bench_update(foc_motor_t *m, float v_alpha, float v_beta,
     if (g_sensorless_bench.obs_deadtime_comp_enable != 0U) {
         const float vc = g_sensorless_bench.deadtime_comp_v;
         const float th_i = 0.05f;
-        abc_t i_abc;
         abc_t v_loss;
         ab_t v_loss_ab;
 
-        /* 计算相电流三相物理方向 */
-        foc_inv_clarke(&(ab_t){i_alpha, i_beta}, &i_abc);
-        v_loss.a = (i_abc.a > th_i) ? vc : ((i_abc.a < -th_i) ? -vc : 0.0f);
-        v_loss.b = (i_abc.b > th_i) ? vc : ((i_abc.b < -th_i) ? -vc : 0.0f);
-        v_loss.c = (i_abc.c > th_i) ? vc : ((i_abc.c < -th_i) ? -vc : 0.0f);
+        /* 计算相电流三相物理方向：直接使用已采样的相电流 m->i_abc，消除反 Clarke 开销 */
+        v_loss.a = (m->i_abc.a > th_i) ? vc : ((m->i_abc.a < -th_i) ? -vc : 0.0f);
+        v_loss.b = (m->i_abc.b > th_i) ? vc : ((m->i_abc.b < -th_i) ? -vc : 0.0f);
+        v_loss.c = (m->i_abc.c > th_i) ? vc : ((m->i_abc.c < -th_i) ? -vc : 0.0f);
         foc_clarke(&v_loss, &v_loss_ab);
 
         /* 从理想平均电压中扣除死区消耗的压降 */

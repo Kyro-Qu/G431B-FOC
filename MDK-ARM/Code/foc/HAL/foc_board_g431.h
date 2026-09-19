@@ -52,11 +52,15 @@ void foc_board_init(void);
 
 /* ---- 系统级稳定性设施 ---- */
 
-/** 快环 CPU 占用统计（DWT 周期计数，status 命令显示） */
+/** 快环 CPU 占用统计（DWT 周期计数，status / cpu 命令显示） */
+#define FOC_CPU_SECT_N 8U
 typedef struct {
     volatile uint32_t last_cycles;  /* 最近一拍快环执行周期数 */
-    volatile uint32_t max_cycles;   /* 上电以来最大值 */
+    volatile uint32_t max_cycles;   /* 上电以来最大值（cpu reset 可清零） */
     volatile float load_pct;        /* 最近一拍占用率 %（预算 = 一个 PWM 周期） */
+    /* 分段峰值：0=传感器+角度 1=电流环 2=无感评测 3=SVM/输出 4=慢环(速度/位置)
+     * 5=遥测打包 6=预留 7=预留；cpu 命令打印，cpu reset 一并清零 */
+    volatile uint32_t sect_max[FOC_CPU_SECT_N];
 } foc_cpu_diag_t;
 
 extern foc_cpu_diag_t g_foc_cpu_diag;
@@ -67,6 +71,15 @@ void foc_board_dwt_init(void);
 uint32_t foc_board_cycles(void);
 /** 提交一次快环执行周期数（在 ISR 出口调用） */
 void foc_board_cpu_sample(uint32_t cycles);
+
+/** 分段计时：t0 取自 foc_board_cycles()，记录该段峰值 */
+static inline void foc_board_cpu_sect(uint8_t idx, uint32_t t0)
+{
+    uint32_t c = foc_board_cycles() - t0;
+    if ((idx < FOC_CPU_SECT_N) && (c > g_foc_cpu_diag.sect_max[idx])) {
+        g_foc_cpu_diag.sect_max[idx] = c;
+    }
+}
 
 /** 独立看门狗启动（IWDG，LSI 时钟，一旦启动不可关闭；
  *  已配置调试器断点冻结）。在所有阻塞初始化完成后调用 */

@@ -88,8 +88,8 @@ def main():
     check("WAVE 通道数=10 且掩码正确", waves and waves[-1]["mask"] == 0x040001FF and len(waves[-1]["vals"]) == 10)
     if status:
         s = status[-1]
-        print("  STATUS: vbus=%.2fV state=%d mode=%d rpm=%d iq=%.2fA temp=%d" % (
-            s["vbus"], s["state"], s["mode"], s["rpm"], s["iq"], s["temp"]))
+        print("  STATUS: vbus=%.2fV state=%d temp=%d cpu=%s" % (
+            s["vbus"], s["state"], s.get("temp", 0), s.get("cpu_pct", "N/A")))
         check("母线电压 10..28V", 10.0 <= s["vbus"] <= 28.0, "%.2fV" % s["vbus"])
         vb = waves[-1]["channels"].get("vbus_fast") if waves else None
         check("vbus_fast 波形与 STATUS 一致(±0.3V)", vb is not None and abs(vb - s["vbus"]) < 0.3,

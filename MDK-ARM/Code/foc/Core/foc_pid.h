@@ -38,6 +38,7 @@ typedef struct {
 /** 一阶低通滤波器 y += dt/(Tf+dt)·(x-y) */
 typedef struct {
     float tf;      /* 时间常数 s；0 = 直通 */
+    float alpha;   /* 预计算滤波系数：dt / (tf + dt)，消除逐拍浮点除法 */
     float y;       /* 上次输出 */
 } foc_lpf_t;
 

@@ -278,6 +278,7 @@ static void cmd_print_help(void)
         "  acog                anticogging query/start/finish/enable\r\n"
         " Diagnostics:\r\n"
         "  obs [0|1|2 [off]]   sensorless observer compare/switch\r\n"
+        "  cpu [reset]         fast-loop load, peak since boot (reset clears)\r\n"
         "  blackbox            dump 512-sample fault waveform\r\n"
         " Storage/telemetry:\r\n"
         "  conf <read|write|erase>\r\n"
@@ -1237,6 +1238,35 @@ static void cmd_execute(char *line)
             foc_cmd_print("err: conf read|write|erase\r\n");
         } else {
             cmd_conf_execute(m, arg1);
+        }
+
+    } else if (strcmp(cmd, "cpu") == 0) {
+        /* 快环负载诊断：cpu 查询；cpu reset 回显当前峰值后清零，便于分段定位尖峰 */
+        static const char *const sect_name[FOC_CPU_SECT_N] = {
+            "sens+cur", "clarke+obs", "cur_pi", "bench", "slow_loop", "telem", "angle+sin", "svm_out"
+        };
+        uint32_t peak = g_foc_cpu_diag.max_cycles;
+        uint32_t sect[FOC_CPU_SECT_N];
+        uint8_t i;
+        for (i = 0U; i < FOC_CPU_SECT_N; i++) {
+            sect[i] = g_foc_cpu_diag.sect_max[i];
+        }
+        if ((arg1 != 0) && (strcmp(arg1, "reset") == 0)) {
+            g_foc_cpu_diag.max_cycles = 0U;
+            for (i = 0U; i < FOC_CPU_SECT_N; i++) {
+                g_foc_cpu_diag.sect_max[i] = 0U;
+            }
+        }
+        foc_cmd_print("cpu=%.1f%% max=%.1f%% (%lu cycles, budget %lu)\r\n",
+                      (double)g_foc_cpu_diag.load_pct,
+                      (double)(100.0f * (float)peak /
+                               (170000000.0f / FOC_PWM_FREQ_HZ)),
+                      (unsigned long)peak,
+                      (unsigned long)(170000000UL / FOC_PWM_FREQ_HZ));
+        for (i = 0U; i < FOC_CPU_SECT_N; i++) {
+            foc_cmd_print(" %-11s max=%5lu cyc (%4.1f%%)\r\n", sect_name[i],
+                          (unsigned long)sect[i],
+                          (double)(100.0f * (float)sect[i] / (170000000.0f / FOC_PWM_FREQ_HZ)));
         }
 
     } else if (strcmp(cmd, "blackbox") == 0) {

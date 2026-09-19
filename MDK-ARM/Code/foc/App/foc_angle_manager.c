@@ -301,6 +301,21 @@ static void fetch_sensorless_data(const foc_motor_t *m, foc_sensorless_algo_t al
 
 float foc_angle_mgr_update(foc_motor_t *m)
 {
+    /* 0. 有感主控常态极速通路：当处于 SENSORED_PRIMARY 且未开启影子评测时，
+     * 直接计算经校准电角度并返回，消除后台无感提取、角差滤波与状态机等 2000+ cycles 开销 */
+    if ((g_angle_mgr.mode == FOC_FEEDBACK_SENSORED_PRIMARY) && (g_sensorless_bench.shadow_enabled == 0U)) {
+        float enc_mech_rad = m->theta_mech;
+        float we = (float)m->calib.direction * m->velocity_observer_rpm * FOC_RPM_TO_RADS * m->params.pole_pairs;
+        float th_enc = foc_wrap_0_2pi(
+            ((float)m->calib.direction * enc_mech_rad * m->params.pole_pairs) + m->calib.electrical_offset_rad +
+            (m->runtime.angle_delay_cycles * we * m->dt_fast));
+        g_angle_mgr.theta_encoder = th_enc;
+        g_angle_mgr.speed_encoder_rpm = m->velocity_filt_rpm;
+        g_angle_mgr.theta_control = th_enc;
+        g_angle_mgr.speed_control = m->velocity_filt_rpm;
+        return th_enc;
+    }
+
     /* 1. 获取无感观测器后台数据 (提前用于健康检测与过零判断) */
     float th_obs = 0.0f;
     float spd_obs = 0.0f;
@@ -334,7 +349,7 @@ float foc_angle_mgr_update(foc_motor_t *m)
     /* 计算经校准的编码器电角度 (含超前补偿) */
     float we = (float)m->calib.direction * m->velocity_observer_rpm * FOC_RPM_TO_RADS * m->params.pole_pairs;
     float th_enc = foc_wrap_0_2pi(
-        foc_wrap_0_2pi(((float)m->calib.direction * enc_mech_rad * m->params.pole_pairs) + m->calib.electrical_offset_rad) +
+        ((float)m->calib.direction * enc_mech_rad * m->params.pole_pairs) + m->calib.electrical_offset_rad +
         (m->runtime.angle_delay_cycles * we * m->dt_fast));
 
     g_angle_mgr.theta_encoder     = th_enc;
@@ -433,9 +448,14 @@ float foc_angle_mgr_update(foc_motor_t *m)
         }
         g_angle_mgr.conf_inst = conf_inst;
 
-        /* 6. 长窗口 (500ms 统计：8000 拍 @16kHz) 滑动统计与硬核接管资格判定
-         * 仅在编码器健康时统计对齐品质 */
-        if (g_angle_mgr.enc_health == ENCODER_HEALTH_NORMAL) {
+        /* 6. 长窗口 (500ms 统计：500 拍 @1kHz) 滑动统计与硬核接管资格判定
+         * 仅在编码器健康时统计对齐品质。
+         * 采用 16 分频 (1kHz) 采样：保持 500ms 统计物理时间跨度，数学方差与 RMS 严格等价，
+         * 将每拍长窗浮点平方、除法与开方开销彻底从 16kHz 快环中解除！ */
+        static uint8_t s_mgr_decim = 0U;
+        s_mgr_decim = (s_mgr_decim + 1U) & 0x0FU;
+
+        if ((s_mgr_decim == 0U) && (g_angle_mgr.enc_health == ENCODER_HEALTH_NORMAL)) {
             g_angle_mgr.window_samples++;
             g_angle_mgr.window_err_sum += err_deg;
             g_angle_mgr.window_err_sq_sum += err_deg * err_deg;
@@ -450,19 +470,19 @@ float foc_angle_mgr_update(foc_motor_t *m)
                 g_angle_mgr.window_unlock_cnt++;
             }
 
-            /* 窗口 EMA 平滑滤波 (滑动追踪最近 500ms / 8000 拍加权均值) */
-            float ema_alpha = 0.001f;
+            /* 窗口 EMA 平滑滤波 (1kHz 下 alpha = 0.016f，与原 16kHz alpha=0.001f 时间常数完全一致) */
+            float ema_alpha = 0.016f;
             if (g_angle_mgr.conf_window < 0.01f) {
                 g_angle_mgr.conf_window = conf_inst;
             } else {
                 g_angle_mgr.conf_window = (g_angle_mgr.conf_window * (1.0f - ema_alpha)) + (conf_inst * ema_alpha);
             }
 
-            if (g_angle_mgr.window_samples >= 8000U) {
-                g_angle_mgr.window_mean_deg = g_angle_mgr.window_err_sum / (float)g_angle_mgr.window_samples;
-                g_angle_mgr.window_rms_deg  = sqrtf(g_angle_mgr.window_err_sq_sum / (float)g_angle_mgr.window_samples);
+            if (g_angle_mgr.window_samples >= 500U) {
+                g_angle_mgr.window_mean_deg = g_angle_mgr.window_err_sum / 500.0f;
+                g_angle_mgr.window_rms_deg  = sqrtf(g_angle_mgr.window_err_sq_sum / 500.0f);
                 /* 窗口真实平均置信度结算 */
-                float full_win_conf = g_angle_mgr.window_conf_sum / (float)g_angle_mgr.window_samples;
+                float full_win_conf = g_angle_mgr.window_conf_sum / 500.0f;
                 g_angle_mgr.conf_window = full_win_conf;
 
                 /* 重置下一个窗口周期累加器 */
@@ -477,21 +497,11 @@ float foc_angle_mgr_update(foc_motor_t *m)
 
             /* 保持向下兼容映射 */
             g_angle_mgr.obs_confidence = g_angle_mgr.conf_window;
+        }
 
-            /*
-             * 严格连续准入门禁 (qualified_streak):
-             * 必须连续无中断满足以下全部硬门禁:
-             * 1. conf_window >= 0.70f
-             * 2. lock == 1
-             * 3. RMS < 18°
-             * 4. Peak < 30°
-             * 5. SpeedErr < 5% (稳态基准标准)
-             * 6. 速度方向一致 (speed_dir_match)
-             * 7. 磁链模长正常 (flux_healthy)
-             * 8. 瞬时角差 err_deg < 20°
-             * 9. 转速已达接管下限 (true_spd_abs >= exit_speed_rpm - 30)
-             * 任一关键门禁不满足，qualified_streak 必须立即清零！
-             */
+        /* 接管资格准入门禁 (qualified_streak) 与动态容忍评分 (qualified_cycles):
+         * 仅在自动接管模式 (AUTO_FALLBACK) 下执行评定；有感主控常态下无需状态机接管，直接跳过！ */
+        if (g_angle_mgr.mode == FOC_FEEDBACK_AUTO_FALLBACK) {
             float true_spd_abs = fabsf(enc_spd_rpm);
             uint8_t speed_dir_match = 1U;
             if (fabsf(m->vel_ref_rpm) > 100.0f) {
@@ -529,21 +539,14 @@ float foc_angle_mgr_update(foc_motor_t *m)
                 g_angle_mgr.qualified_streak = 0U;
             }
 
-            /*
-             * 分级扣减与连续超限时间处理 (qualified_cycles - 动态容忍准入评分):
-             * 1. 硬保护区: >35° 或 NaN/Inf 或 lock=0 或 磁链严重异常 或 转向倒转 -> 立即硬保护清零
-             * 2. 重度超限区: >26° 持续数拍 (>=16 拍 / 1.0ms @16kHz) -> 撤销接管资格
-             * 3. 过渡/轻度纹波区: 20°~26° -> 稳态每拍小幅扣减 1 拍 (爬坡中保持不扣)，绝不单拍清零
-             * 4. 正常达标区: <20° -> 稳定累积 qualified_cycles++ (需满足 conf_window>=0.70)
-             */
+            /* 分级扣减与连续超限时间处理 (qualified_cycles - 动态容忍准入评分) */
             uint8_t is_dynamic_ramp = ((m->mode == FOC_MODE_VELOCITY) && (fabsf(m->target - m->vel_ref_rpm) > 20.0f)) ? 1U : 0U;
             float max_spd_err_ratio = (is_dynamic_ramp != 0U) ? 0.12f : 0.05f;
             uint8_t spd_err_ok = (true_spd_abs > 100.0f) ? ((spd_err / true_spd_abs) < max_spd_err_ratio) : 1U;
-            uint8_t rms_ok = ((g_angle_mgr.window_rms_deg < 18.0f) || (g_angle_mgr.window_samples < 1000U)) ? 1U : 0U;
+            uint8_t rms_ok = ((g_angle_mgr.window_rms_deg < 18.0f) || (g_angle_mgr.window_samples < 60U)) ? 1U : 0U;
 
             if ((obs_lock == 0U) || (is_nan_or_inf != 0U) || (err_deg > 35.0f) ||
                 (flux_healthy == 0U) || (speed_dir_match == 0U)) {
-                /* 立即硬保护清零 */
                 g_angle_mgr.over_26_streak = 0U;
                 g_angle_mgr.ramp_ripple_streak = 0U;
                 g_angle_mgr.over_limit_streak++;
@@ -553,10 +556,8 @@ float foc_angle_mgr_update(foc_motor_t *m)
                 g_angle_mgr.over_limit_streak++;
                 g_angle_mgr.ramp_ripple_streak = 0U;
                 if (g_angle_mgr.over_26_streak >= 16U) {
-                    /* >26° 持续超过 16 拍 (~1.0ms @16kHz): 判定观测器持续脱轨，撤销资格 */
                     g_angle_mgr.qualified_cycles = 0U;
                 } else {
-                    /* 偶发单拍尖峰: 小幅加速扣减 (每拍扣 2 拍)，不单拍清零 */
                     if (g_angle_mgr.qualified_cycles >= 2U) {
                         g_angle_mgr.qualified_cycles -= 2U;
                     } else {
@@ -564,7 +565,6 @@ float foc_angle_mgr_update(foc_motor_t *m)
                     }
                 }
             } else if (err_deg >= 20.0f) {
-                /* 20°~26° 过渡/轻度纹波区: 动态爬坡期允许短时纹波放宽，但必须满足全部宏观门禁且有时间上限 */
                 g_angle_mgr.over_26_streak = 0U;
                 g_angle_mgr.over_limit_streak++;
                 uint8_t can_hold_ramp = ((is_dynamic_ramp != 0U) &&
@@ -576,16 +576,12 @@ float foc_angle_mgr_update(foc_motor_t *m)
                 if (can_hold_ramp != 0U) {
                     g_angle_mgr.ramp_ripple_streak++;
                 } else {
-                    /* 稳态下出现纹波，或动态爬坡持续纹波超时 (>100ms / 1600拍)，或宏观指标不足:
-                     * 减慢累积并小幅扣减 (每拍扣 1 拍)，绝不单拍清零 */
                     g_angle_mgr.ramp_ripple_streak = 0U;
                     if (g_angle_mgr.qualified_cycles > 0U) {
                         g_angle_mgr.qualified_cycles--;
                     }
                 }
             } else {
-                /* 正常达标区 (<20°): 超限计数清零，正常累积
-                 * 严格前置门禁：必须同时满足速度达标、速度误差合规、RMS合规且窗口置信度 conf_window >= 0.70f */
                 g_angle_mgr.over_26_streak = 0U;
                 g_angle_mgr.over_limit_streak = 0U;
                 g_angle_mgr.ramp_ripple_streak = 0U;

@@ -19,6 +19,7 @@
 #include "main.h"
 #include "stm32g4xx_hal.h"
 #include "../Driver/current/current_shunt.h"
+#include "../Driver/encoder/abz_encoder.h"
 #include "../HAL/foc_board_g431.h"
 
 extern UART_HandleTypeDef huart2;
@@ -46,6 +47,21 @@ static uint16_t s_wave_seq = 0U;
 static uint16_t s_slow_seq = 0U;
 static uint32_t s_last_status_ms = 0U;
 
+static uint8_t s_active_ch_indices[FOC_STP_MAX_WAVE_CHANNELS];
+static uint8_t s_active_ch_count = 0U;
+
+static void update_active_channels(uint32_t mask)
+{
+    uint8_t count = 0U;
+    uint8_t bit;
+    for (bit = 0U; (bit < 32U) && (count < (uint8_t)FOC_STP_MAX_WAVE_CHANNELS); bit++) {
+        if ((mask & (1UL << bit)) != 0U) {
+            s_active_ch_indices[count++] = bit;
+        }
+    }
+    s_active_ch_count = count;
+}
+
 /* 慢速流待发状态管理 */
 static volatile uint8_t s_status_pending = 0U;
 static volatile uint8_t s_event_pending = 0U;
@@ -69,12 +85,13 @@ static foc_ack_snapshot_t s_ack_snap;
 
 void foc_telemetry_init(void)
 {
+    s_telem_div = FOC_TELEMETRY_DIV;
     decim_cnt = 0U;
     s_wave_seq = 0U;
     s_slow_seq = 0U;
     s_last_status_ms = 0U;
     s_channel_mask = FOC_TELEMETRY_DEFAULT_MASK;
-    s_telem_div = FOC_TELEMETRY_DIV;
+    update_active_channels(s_channel_mask);
     s_tx_state = FOC_TX_IDLE;
     s_status_pending = 0U;
     s_event_pending = 0U;
@@ -84,6 +101,9 @@ void foc_telemetry_init(void)
 void foc_telemetry_set_enable(uint8_t enable)
 {
     telem_enable = (enable != 0U) ? 1U : 0U;
+    if (telem_enable != 0U) {
+        decim_cnt = 0U;
+    }
 }
 
 uint8_t foc_telemetry_get_enable(void)
@@ -115,6 +135,7 @@ uint8_t foc_telemetry_set_mask(uint32_t mask)
         status = FOC_STP_ACK_LIMITED;
     } else {
         s_channel_mask = mask;
+        update_active_channels(mask);
         status = FOC_STP_ACK_OK;
     }
 
@@ -215,7 +236,11 @@ void foc_telemetry_isr_tick(void)
     if ((telem_enable == 0U) || (telem_suspend != 0U) || (mask == 0U)) {
         return;
     }
-    if (++decim_cnt < s_telem_div) {
+    /* 强时隙锁相：固定在第 4 拍触发，与编码器估计 (第 0 拍) 和慢环控制 (第 8 拍) 完美正交 */
+    if (abz_encoder_get_sample_div() != 4U) {
+        return;
+    }
+    if (++decim_cnt < (uint16_t)(s_telem_div / 16U)) {
         return;
     }
     decim_cnt = 0U;
@@ -229,11 +254,10 @@ void foc_telemetry_isr_tick(void)
     s_tx_state = FOC_TX_DMA_WAVE;
     foc_critical_exit(primask);
 
-    /* 按掩码从低到高提取物理量 */
-    for (bit = 0U; (bit < 32U) && (val_count < (uint8_t)FOC_STP_MAX_WAVE_CHANNELS); bit++) {
-        if ((mask & (1UL << bit)) != 0U) {
-            vals[val_count++] = extract_channel_value(m0, bit);
-        }
+    /* 按预存激活通道顺序极速提取物理量（无需遍历 32 次掩码） */
+    val_count = s_active_ch_count;
+    for (bit = 0U; bit < val_count; bit++) {
+        vals[bit] = extract_channel_value(m0, s_active_ch_indices[bit]);
     }
 
     /* 打包到独立 s_wave_buf */

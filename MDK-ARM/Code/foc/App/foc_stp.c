@@ -63,33 +63,31 @@ uint16_t foc_stp_crc16(const uint8_t *data, uint16_t len)
     return foc_stp_crc16_update(0xFFFFU, data, len);
 }
 
-static void write_u16_le(uint8_t *buf, uint16_t val)
+typedef struct { uint16_t v; } __attribute__((packed)) stp_packed_u16_t;
+typedef struct { uint32_t v; } __attribute__((packed)) stp_packed_u32_t;
+typedef struct { float v; } __attribute__((packed)) stp_packed_f32_t;
+
+static inline void write_u16_le(uint8_t *buf, uint16_t val)
 {
-    buf[0] = (uint8_t)(val & 0xFFU);
-    buf[1] = (uint8_t)((val >> 8U) & 0xFFU);
+    ((stp_packed_u16_t *)(void *)buf)->v = val;
 }
 
-static void write_u32_le(uint8_t *buf, uint32_t val)
+static inline void write_u32_le(uint8_t *buf, uint32_t val)
 {
-    buf[0] = (uint8_t)(val & 0xFFU);
-    buf[1] = (uint8_t)((val >> 8U) & 0xFFU);
-    buf[2] = (uint8_t)((val >> 16U) & 0xFFU);
-    buf[3] = (uint8_t)((val >> 24U) & 0xFFU);
+    ((stp_packed_u32_t *)(void *)buf)->v = val;
 }
 
-static void write_f32_le(uint8_t *buf, float val)
+static inline void write_f32_le(uint8_t *buf, float val)
 {
-    (void)memcpy(buf, &val, 4U);
+    ((stp_packed_f32_t *)(void *)buf)->v = val;
 }
 
 uint8_t foc_stp_popcount32(uint32_t mask)
 {
-    uint8_t count = 0U;
-    while (mask != 0U) {
-        count += (uint8_t)(mask & 1U);
-        mask >>= 1U;
-    }
-    return count;
+    /* 汉明权重并行算法，无分支循环，仅需数条指令即可算完 32 位置 1 计数 */
+    mask = mask - ((mask >> 1U) & 0x55555555UL);
+    mask = (mask & 0x33333333UL) + ((mask >> 2U) & 0x33333333UL);
+    return (uint8_t)((((mask + (mask >> 4U)) & 0x0F0F0F0FUL) * 0x01010101UL) >> 24U);
 }
 
 uint16_t foc_stp_pack_wave(uint8_t *buf, uint16_t buf_size, uint16_t seq,
@@ -101,17 +99,15 @@ uint16_t foc_stp_pack_wave(uint8_t *buf, uint16_t buf_size, uint16_t seq,
     uint16_t crc;
     uint8_t i;
     uint16_t offset;
-    uint8_t expected_count;
 
-    expected_count = foc_stp_popcount32(channel_mask);
-    if ((expected_count != val_count) || (val_count > (uint8_t)FOC_STP_MAX_WAVE_CHANNELS)) {
-        return 0U; /* 严禁掩码与值数量不一致或超过硬件限制 */
+    if ((val_count > (uint8_t)FOC_STP_MAX_WAVE_CHANNELS) || (buf == 0)) {
+        return 0U;
     }
 
     payload_len = (uint8_t)(8U + (uint8_t)(val_count * 4U)); /* tick(4) + mask(4) + floats(K*4) */
     total_len = (uint16_t)((uint16_t)FOC_STP_OVERHEAD + (uint16_t)payload_len);
 
-    if ((buf == 0) || (buf_size < total_len)) {
+    if (buf_size < total_len) {
         return 0U;
     }
 

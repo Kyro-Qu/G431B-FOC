@@ -11,11 +11,50 @@
 #include "foc_utils.h"
 #include "foc_port.h"
 #include "../HAL/foc_config.h"
+#include "../HAL/foc_board_g431.h"   /* 仅用于快环分段 CPU 剖析 */
 #include "../App/foc_sensorless_bench.h"
 #include "../App/foc_angle_manager.h"
+#include "../Driver/encoder/abz_encoder.h"
 
 /* dq 电流遥测低通时间常数（仅用于观察，不进控制环） */
 #define FOC_IDQ_TELEM_LPF_TF 0.002f
+/* 256 点标准正弦查找表 (Q1.31 插值基准, 覆盖 [0, 2pi]) */
+const float g_foc_sin_tab[257] = {
+     0.00000000f,  0.02454123f,  0.04906767f,  0.07356456f,  0.09801714f,  0.12241068f,  0.14673047f,  0.17096189f,
+     0.19509032f,  0.21910124f,  0.24298018f,  0.26671276f,  0.29028468f,  0.31368174f,  0.33688985f,  0.35989504f,
+     0.38268343f,  0.40524131f,  0.42755509f,  0.44961133f,  0.47139674f,  0.49289819f,  0.51410274f,  0.53499762f,
+     0.55557023f,  0.57580819f,  0.59569930f,  0.61523159f,  0.63439328f,  0.65317284f,  0.67155895f,  0.68954054f,
+     0.70710678f,  0.72424708f,  0.74095113f,  0.75720885f,  0.77301045f,  0.78834643f,  0.80320753f,  0.81758481f,
+     0.83146961f,  0.84485357f,  0.85772861f,  0.87008699f,  0.88192126f,  0.89322430f,  0.90398929f,  0.91420976f,
+     0.92387953f,  0.93299280f,  0.94154407f,  0.94952818f,  0.95694034f,  0.96377607f,  0.97003125f,  0.97570213f,
+     0.98078528f,  0.98527764f,  0.98917651f,  0.99247953f,  0.99518473f,  0.99729046f,  0.99879546f,  0.99969882f,
+     1.00000000f,  0.99969882f,  0.99879546f,  0.99729046f,  0.99518473f,  0.99247953f,  0.98917651f,  0.98527764f,
+     0.98078528f,  0.97570213f,  0.97003125f,  0.96377607f,  0.95694034f,  0.94952818f,  0.94154407f,  0.93299280f,
+     0.92387953f,  0.91420976f,  0.90398929f,  0.89322430f,  0.88192126f,  0.87008699f,  0.85772861f,  0.84485357f,
+     0.83146961f,  0.81758481f,  0.80320753f,  0.78834643f,  0.77301045f,  0.75720885f,  0.74095113f,  0.72424708f,
+     0.70710678f,  0.68954054f,  0.67155895f,  0.65317284f,  0.63439328f,  0.61523159f,  0.59569930f,  0.57580819f,
+     0.55557023f,  0.53499762f,  0.51410274f,  0.49289819f,  0.47139674f,  0.44961133f,  0.42755509f,  0.40524131f,
+     0.38268343f,  0.35989504f,  0.33688985f,  0.31368174f,  0.29028468f,  0.26671276f,  0.24298018f,  0.21910124f,
+     0.19509032f,  0.17096189f,  0.14673047f,  0.12241068f,  0.09801714f,  0.07356456f,  0.04906767f,  0.02454123f,
+     0.00000000f, -0.02454123f, -0.04906767f, -0.07356456f, -0.09801714f, -0.12241068f, -0.14673047f, -0.17096189f,
+    -0.19509032f, -0.21910124f, -0.24298018f, -0.26671276f, -0.29028468f, -0.31368174f, -0.33688985f, -0.35989504f,
+    -0.38268343f, -0.40524131f, -0.42755509f, -0.44961133f, -0.47139674f, -0.49289819f, -0.51410274f, -0.53499762f,
+    -0.55557023f, -0.57580819f, -0.59569930f, -0.61523159f, -0.63439328f, -0.65317284f, -0.67155895f, -0.68954054f,
+    -0.70710678f, -0.72424708f, -0.74095113f, -0.75720885f, -0.77301045f, -0.78834643f, -0.80320753f, -0.81758481f,
+    -0.83146961f, -0.84485357f, -0.85772861f, -0.87008699f, -0.88192126f, -0.89322430f, -0.90398929f, -0.91420976f,
+    -0.92387953f, -0.93299280f, -0.94154407f, -0.94952818f, -0.95694034f, -0.96377607f, -0.97003125f, -0.97570213f,
+    -0.98078528f, -0.98527764f, -0.98917651f, -0.99247953f, -0.99518473f, -0.99729046f, -0.99879546f, -0.99969882f,
+    -1.00000000f, -0.99969882f, -0.99879546f, -0.99729046f, -0.99518473f, -0.99247953f, -0.98917651f, -0.98527764f,
+    -0.98078528f, -0.97570213f, -0.97003125f, -0.96377607f, -0.95694034f, -0.94952818f, -0.94154407f, -0.93299280f,
+    -0.92387953f, -0.91420976f, -0.90398929f, -0.89322430f, -0.88192126f, -0.87008699f, -0.85772861f, -0.84485357f,
+    -0.83146961f, -0.81758481f, -0.80320753f, -0.78834643f, -0.77301045f, -0.75720885f, -0.74095113f, -0.72424708f,
+    -0.70710678f, -0.68954054f, -0.67155895f, -0.65317284f, -0.63439328f, -0.61523159f, -0.59569930f, -0.57580819f,
+    -0.55557023f, -0.53499762f, -0.51410274f, -0.49289819f, -0.47139674f, -0.44961133f, -0.42755509f, -0.40524131f,
+    -0.38268343f, -0.35989504f, -0.33688985f, -0.31368174f, -0.29028468f, -0.26671276f, -0.24298018f, -0.21910124f,
+    -0.19509032f, -0.17096189f, -0.14673047f, -0.12241068f, -0.09801714f, -0.07356456f, -0.04906767f, -0.02454123f,
+     0.00000000f,
+};
+
 #define FOC_VEL_ZERO_RESET_RPM 5.0f
 #define FOC_RUN_TRIP_MARGIN_SCALE 1.25f
 #define FOC_RUN_TRIP_MARGIN_A     0.10f
@@ -59,7 +98,9 @@ static void foc_voltage_circle_limit(dq_t *v, float v_max)
  * 512 拍 = 32ms 历史。2026-09-02 高速诊断结论：2380 RPM 附近的电流
  * 爆发是事件型（28ms 稳态纹波后 1ms 内从 ±1A 冲到 5 A+），512 拍
  * 窗口确保完整覆盖起振时刻。 */
-#define FOC_BLACKBOX_LEN 512U
+#ifndef FOC_BLACKBOX_LEN
+#define FOC_BLACKBOX_LEN 512U   /* 正常由 foc_motor.h 提供，此处仅兜底 */
+#endif
 
 static float s_blackbox_u[FOC_BLACKBOX_LEN];
 static float s_blackbox_w[FOC_BLACKBOX_LEN];
@@ -71,14 +112,15 @@ static uint8_t s_blackbox_frozen = 0U;
 
 static void foc_motor_blackbox_record(const foc_motor_t *m)
 {
-    s_blackbox_u[s_blackbox_head] = m->i_abc.a;
-    s_blackbox_w[s_blackbox_head] = m->i_abc.c;
-    s_blackbox_th[s_blackbox_head] = m->theta_e;
-    s_blackbox_iq[s_blackbox_head] = m->i_dq.q;
+    uint32_t head = s_blackbox_head;
+    s_blackbox_u[head] = m->i_abc.a;
+    s_blackbox_w[head] = m->i_abc.c;
+    s_blackbox_th[head] = m->theta_e;
+    s_blackbox_iq[head] = m->i_dq.q;
     /* 诊断：记录低通前 id——解耦项 we*Ls*id 直通 vq，是爆发
      * 放大器的核心输入，验证 id/iq 摆动的相对幅度与相位。 */
-    s_blackbox_id[s_blackbox_head] = m->i_dq.d;
-    s_blackbox_head = (s_blackbox_head + 1U) % FOC_BLACKBOX_LEN;
+    s_blackbox_id[head] = m->i_dq.d;
+    s_blackbox_head = (uint16_t)((head + 1U) & (FOC_BLACKBOX_LEN - 1U));
 }
 
 void foc_motor_blackbox_freeze(void)
@@ -171,17 +213,20 @@ static uint8_t foc_motor_check_soft_current(foc_motor_t *m)
          * current and caused repeatable soft trips near 2350 RPM. */
         float mag_sq = (m->i_dq_filt.d * m->i_dq_filt.d) +
                        (m->i_dq_filt.q * m->i_dq_filt.q);
+        float limit = m->safety.current_limit_a;
+        float limit_sq = limit * limit;
 
-        sample = sqrtf(mag_sq);
-        m->safety.soft_current_a = sample;
-    }
-
-    if (m->safety.soft_current_a > m->safety.current_limit_a) {
-        if (m->safety.consecutive_over_limit < 0xFFFFU) {
-            ++m->safety.consecutive_over_limit;
+        if (mag_sq > limit_sq) {
+            sample = sqrtf(mag_sq);
+            m->safety.soft_current_a = sample;
+            if (m->safety.consecutive_over_limit < 0xFFFFU) {
+                ++m->safety.consecutive_over_limit;
+            }
+        } else {
+            /* 绝大多数正常工况下平方未超限，彻底规避 sqrtf 开方库调用与分支 */
+            m->safety.soft_current_a = 0.0f;
+            m->safety.consecutive_over_limit = 0U;
         }
-    } else {
-        m->safety.consecutive_over_limit = 0U;
     }
 
     /* 角度源切换后 1s 豁免窗：16° 角度跳变的暂态电流天然超软限，
@@ -381,13 +426,13 @@ static void foc_motor_slow_loop(foc_motor_t *m)
             m->fw_integral = foc_clampf(m->fw_integral, id_min, 0.0f);
             id_ref_cmd = m->fw_integral;
 
-            /* 矢量圆限幅：剩余可用 Iq 模长 */
-            float iq_sat_sq = (m->params.max_current_a * m->params.max_current_a) -
-                              (id_ref_cmd * id_ref_cmd);
-            if (iq_sat_sq > 0.0f) {
-                max_iq_sat = sqrtf(iq_sat_sq);
+            /* 矢量圆限幅：仅当实际产生弱磁负 Id 时才需裁剪可用 Iq，否则保持标称最大电流 */
+            if (id_ref_cmd < -0.01f) {
+                float iq_sat_sq = (m->params.max_current_a * m->params.max_current_a) -
+                                  (id_ref_cmd * id_ref_cmd);
+                max_iq_sat = (iq_sat_sq > 0.0f) ? sqrtf(iq_sat_sq) : 0.05f;
             } else {
-                max_iq_sat = 0.05f;
+                max_iq_sat = m->params.max_current_a;
             }
         } else {
             m->fw_integral = 0.0f;
@@ -396,7 +441,9 @@ static void foc_motor_slow_loop(foc_motor_t *m)
         }
 
         m->id_ref = id_ref_cmd;
-        foc_pid_set_limit(&m->pid_vel, max_iq_sat);
+        if (max_iq_sat != m->pid_vel.out_limit) {
+            foc_pid_set_limit(&m->pid_vel, max_iq_sat);
+        }
 
         if ((fabsf(tgt) < 0.001f) &&
             (fabsf(m->vel_ref_rpm) < 0.001f) &&
@@ -687,7 +734,7 @@ void foc_motor_init(foc_motor_t *m,
     m->svm.duty_a = m->svm.duty_b = m->svm.duty_c = 0.5f;
     m->svm.sector = 0U;
     m->ol_angle_step = 0.0f;
-    m->slow_cnt = 0U;
+    m->slow_cnt = m->slow_div / 2U;   /* 慢环与速度估计拍错开半个周期，消除同拍峰值叠加 */
     m->last_spd_is_obs = 0U;
     m->traj.active = 0U;
     m->traj.xf = 0.0f;
@@ -819,20 +866,44 @@ void foc_motor_fast_loop(foc_motor_t *m)
     float cos_th;
     ab_t i_ab;
     ab_t v_ab;
+    uint32_t tp = foc_board_cycles();   /* 分段剖析起点 */
 
     /* 1. 传感器更新：任何状态都执行，保证角度/速度随时可观测 */
     if (m->sensor != 0) {
         float th;
+        float dth;
 
-        m->sensor->update();
-        th = m->sensor->angle_rad();
-        m->position_rad += foc_wrap_pm_pi(th - m->theta_mech);
-        m->theta_mech = th;
-        m->velocity_rpm = m->sensor->velocity_rpm();
-        m->velocity_observer_rpm =
-            (m->sensor->velocity_control_rpm != 0)
-                ? m->sensor->velocity_control_rpm()
-                : m->velocity_rpm;
+        if (m->sensor->update == abz_encoder_update) {
+            /* 针对 ABZ 增量编码器直接函数调用，消除 4 次虚表函数指针流水线冲刷 */
+            abz_encoder_update();
+            th = abz_encoder_angle_rad();
+            dth = th - m->theta_mech;
+            if (dth >= _PI) {
+                dth -= _2PI;
+            } else if (dth < -_PI) {
+                dth += _2PI;
+            }
+            m->position_rad += dth;
+            m->theta_mech = th;
+            m->velocity_rpm = abz_encoder_velocity_rpm();
+            m->velocity_observer_rpm = abz_encoder_pll_velocity_rpm();
+        } else {
+            m->sensor->update();
+            th = m->sensor->angle_rad();
+            dth = th - m->theta_mech;
+            if (dth >= _PI) {
+                dth -= _2PI;
+            } else if (dth < -_PI) {
+                dth += _2PI;
+            }
+            m->position_rad += dth;
+            m->theta_mech = th;
+            m->velocity_rpm = m->sensor->velocity_rpm();
+            m->velocity_observer_rpm =
+                (m->sensor->velocity_control_rpm != 0)
+                    ? m->sensor->velocity_control_rpm()
+                    : m->velocity_rpm;
+        }
     }
 
     st = m->state;
@@ -862,6 +933,8 @@ void foc_motor_fast_loop(foc_motor_t *m)
          * 在 240rpm 起步段误触发假 CURRENT_SENSE 停机。黑匣子冻结
          * 由 foc_motor_fault() 内部机制负责，无需此处抢跑。） */
     }
+    foc_board_cpu_sect(0U, tp);   /* 0 = 传感器读取 + 电流读取与黑匣子 */
+    tp = foc_board_cycles();
 
     /* 3. 电角度选择
      *    CALIB 状态与开环 V/f 模式一律用开环角度；
@@ -876,8 +949,9 @@ void foc_motor_fast_loop(foc_motor_t *m)
         m->theta_e = foc_angle_mgr_update(m);
     }
 
-    sin_th = foc_sin(m->theta_e);
-    cos_th = foc_cos(m->theta_e);
+    foc_sincos(m->theta_e, &sin_th, &cos_th);
+    foc_board_cpu_sect(6U, tp);   /* 6 = 角度仲裁 + sin/cos */
+    tp = foc_board_cycles();
 
     /* 4. Clarke + Park：三相电流 → dq 电流 */
     foc_clarke(&m->i_abc, &i_ab);
@@ -904,10 +978,13 @@ void foc_motor_fast_loop(foc_motor_t *m)
         return;
     }
 
-    /* 5. 慢环分频：速度/位置环 */
-    if (++m->slow_cnt >= m->slow_div) {
-        m->slow_cnt = 0U;
+    /* 5. 慢环分频：速度/位置环（与编码器长窗速度估计 0 拍严格锁相在 8 拍，绝对永不同拍重叠） */
+    foc_board_cpu_sect(1U, tp);   /* 1 = Clarke/Park + 观测器 + 电流滤波/软限流 */
+    tp = foc_board_cycles();
+    if (abz_encoder_get_sample_div() == (ABZ_VELOCITY_SAMPLE_DIV / 2U)) {
         foc_motor_slow_loop(m);
+        foc_board_cpu_sect(4U, tp);   /* 4 = 慢环（速度/位置） */
+        tp = foc_board_cycles();
     }
 
     /* 6. 电压命令 */
@@ -924,11 +1001,12 @@ void foc_motor_fast_loop(foc_motor_t *m)
         float id_fb = foc_notch_update(&m->notch_id, m->i_dq.d);
         float iq_fb = foc_notch_update(&m->notch_iq, m->i_dq.q);
 
-        /* 电流环 PID 输出上限动态随实时母线更新（与 SVPWM/电压圆同源），
-         * 杜绝母线塌陷时条件积分 anti-windup 判据失效导致的积分发散（P0 问题优化）。 */
+        /* 电流环 PID 输出上限随母线更新（仅在母线变动时重新写入限幅，消除每拍函数调用开销） */
         float v_limit = m->drv->u_dc * INV_SQRT_3;
-        foc_pid_set_limit(&m->pid_id, v_limit);
-        foc_pid_set_limit(&m->pid_iq, v_limit);
+        if (v_limit != m->pid_id.out_limit) {
+            foc_pid_set_limit(&m->pid_id, v_limit);
+            foc_pid_set_limit(&m->pid_iq, v_limit);
+        }
 
         float vd = foc_pid_update(&m->pid_id, m->id_ref - id_fb, m->dt_fast);
         float vq = foc_pid_update(&m->pid_iq, m->iq_ref - iq_fb, m->dt_fast);
@@ -944,14 +1022,19 @@ void foc_motor_fast_loop(foc_motor_t *m)
          * 反电动势项 ω_e * ψ_f 则由速度环前馈或 PI 积分项自适应吸收。
          */
         if (m->cfg.decouple_enable != 0U) {
-            float spd_mech = ((g_angle_mgr.handover_blend > 0.001f) ||
-                              (g_angle_mgr.enc_health != ENCODER_HEALTH_NORMAL) ||
-                              (g_angle_mgr.mode == FOC_FEEDBACK_SENSORLESS_PRIMARY) ||
-                              (g_angle_mgr.state >= FOC_ANGLE_BLEND_TO_SENSORLESS))
-                             ? g_angle_mgr.speed_control
-                             : m->velocity_observer_rpm;
-            float dir_scale = (g_angle_mgr.mode == FOC_FEEDBACK_SENSORLESS_PRIMARY)
-                              ? 1.0f : (float)m->calib.direction;
+            float spd_mech;
+            float dir_scale;
+            if (g_angle_mgr.mode == FOC_FEEDBACK_SENSORED_PRIMARY) {
+                spd_mech = m->velocity_observer_rpm;
+                dir_scale = (float)m->calib.direction;
+            } else {
+                spd_mech = ((g_angle_mgr.handover_blend > 0.001f) ||
+                            (g_angle_mgr.enc_health != ENCODER_HEALTH_NORMAL) ||
+                            (g_angle_mgr.state >= FOC_ANGLE_BLEND_TO_SENSORLESS))
+                           ? g_angle_mgr.speed_control
+                           : m->velocity_observer_rpm;
+                dir_scale = 1.0f;
+            }
             float we = dir_scale * spd_mech * FOC_RPM_TO_RADS * (float)m->params.pole_pairs;
 
             /* 解耦项与 PID 反馈同源：使用陷波后反馈值，精确抵消交叉电抗电压 */
@@ -996,11 +1079,17 @@ void foc_motor_fast_loop(foc_motor_t *m)
     }
 
     /* 无感影子评测平台更新：
-     * 严格使用上一拍由 PWM 硬件实际施加且经 Vbus 折算的真实电压 v_ab_last，
-     * 严谨对齐本拍采样电流 i_ab 的物理时序（消除 z^-1 PWM 装填时延差） */
-    foc_sensorless_bench_update(m, m->v_ab_last.alpha, m->v_ab_last.beta,
-                                i_ab.alpha, i_ab.beta,
-                                foc_motor_encoder_theta_e(m), m->dt_fast);
+     * 仅在纯无感模式、自动接管模式或显式开启影子评测 (bench/obs) 时更新；
+     * 有感主控常态直接跳过，消除函数调用与角度计算开销 */
+    foc_board_cpu_sect(2U, tp);   /* 2 = 电流环 PI + 解耦 + 死区补偿（含慢环外的全部） */
+    tp = foc_board_cycles();
+    if ((g_angle_mgr.mode != FOC_FEEDBACK_SENSORED_PRIMARY) || (g_sensorless_bench.shadow_enabled != 0U)) {
+        foc_sensorless_bench_update(m, m->v_ab_last.alpha, m->v_ab_last.beta,
+                                    i_ab.alpha, i_ab.beta,
+                                    m->theta_e, m->dt_fast);
+    }
+    foc_board_cpu_sect(3U, tp);   /* 3 = 无感评测平台 */
+    tp = foc_board_cycles();
 
     /* HFI 影子模块高频注入电压安全叠加：
      * 仅在影子 HFI 使能且非 CALIB 状态下，将估计 d 轴的高频方波电压叠加至输出定子电压 v_ab。
@@ -1017,8 +1106,8 @@ void foc_motor_fast_loop(foc_motor_t *m)
         (uint32_t)(m->svm.duty_c * (float)m->drv->full_count),
         m->svm.sector);
 
-    /* 根据本拍实际占空比与母线电压重构端电压，供下一拍观测器使用 */
-    {
+    /* 根据本拍实际占空比与母线电压重构端电压，供下一拍观测器使用（仅在无感观测器工作时需要） */
+    if ((g_angle_mgr.mode != FOC_FEEDBACK_SENSORED_PRIMARY) || (g_sensorless_bench.shadow_enabled != 0U)) {
         float udc_third = m->drv->u_dc * 0.33333333f;
         float da = m->svm.duty_a;
         float db = m->svm.duty_b;
@@ -1026,6 +1115,7 @@ void foc_motor_fast_loop(foc_motor_t *m)
         m->v_ab_last.alpha = udc_third * ((2.0f * da) - db - dc);
         m->v_ab_last.beta  = m->drv->u_dc * 0.57735027f * (db - dc);
     }
+    foc_board_cpu_sect(7U, tp);   /* 7 = SVM + 占空比写入 + 端电压重构 */
 }
 
 /* ======================== 命令接口 ======================== */
@@ -1065,7 +1155,7 @@ uint8_t foc_motor_arm(foc_motor_t *m)
     m->velocity_filt_rpm = m->velocity_observer_rpm;
     foc_speed_filter_reset(&m->vel_filter, m->velocity_observer_rpm);
     foc_speed_filter_reset(&m->vel_filter_low, m->velocity_observer_rpm);
-    m->slow_cnt = 0U;
+    m->slow_cnt = m->slow_div / 2U;   /* 慢环与速度估计拍错开半个周期 */
     m->stall_cnt = 0U;
     m->safety.consecutive_over_limit = 0U;
     m->safety.soft_current_a = 0.0f;

@@ -304,6 +304,7 @@ void foc_app_init(void)
 void foc_app_isr_current_loop(void)
 {
     uint32_t t0 = foc_board_cycles();
+    uint32_t ts;
 
     foc_motor_fast_loop(&g_foc_motors[0]);
 
@@ -313,7 +314,9 @@ void foc_app_isr_current_loop(void)
     foc_motor_fast_loop(&g_foc_motors[1]);
 #endif
 
+    ts = foc_board_cycles();
     foc_telemetry_isr_tick();
+    foc_board_cpu_sect(5U, ts);            /* 5 = 遥测打包+DMA 启动 */
     foc_board_cpu_sample(foc_board_cycles() - t0);
 }
 
