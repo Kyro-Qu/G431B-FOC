@@ -100,7 +100,8 @@ typedef enum {
     FOC_FAULT_OBSERVER,           /* 无感观测器故障（失锁/超差/发散超时） */
     FOC_FAULT_BAD_CONFIG,         /* 上电参数自检失败（参数非法） */
     FOC_FAULT_UNDERVOLTAGE,       /* 母线欠压：低于安全工作电压持续超时 */
-    FOC_FAULT_OVERVOLTAGE         /* 母线过压：超过安全工作电压持续超时 */
+    FOC_FAULT_OVERVOLTAGE,        /* 母线过压：超过安全工作电压持续超时 */
+    FOC_FAULT_OVERTEMP            /* 功率级过温：板载 NTC 超过保护阈值 */
 } foc_fault_t;
 
 /* ========== 硬件抽象接口表 ========== */

@@ -168,6 +168,7 @@ static void cmd_print_status(void)
             "i_soft=%.3fA peak=%.3fA\r\n"
             "vd=%.3fV vq=%.3fV limit=%.2fA trip=%.2fA\r\n"
             "vbus=%.2fV (raw=%u %s) udc_drv=%.2fV\r\n"
+            "temp=%.1fC (raw=%u R=%.0fohm %s)\r\n"
             "trip_i=%.3f/%.3f/%.3fA trip_soft=%.3fA hard=%u\r\n"
             "calib=%u%s\r\n"
             "fault=%u%s\r\n",
@@ -197,6 +198,10 @@ static void cmd_print_status(void)
             (unsigned)g_foc_vbus_diag.raw_adc,
             (g_foc_vbus_diag.valid != 0U) ? "OK" : "INIT",
             (double)m->drv->u_dc,
+            (double)g_foc_temp_diag.temp_c,
+            (unsigned)g_foc_temp_diag.raw_adc,
+            (double)g_foc_temp_diag.r_ntc_ohm,
+            (g_foc_temp_diag.valid != 0U) ? "OK" : "INIT",
             (double)m->safety.trip_current_u_a,
             (double)m->safety.trip_current_v_a,
             (double)m->safety.trip_current_w_a,
@@ -268,6 +273,7 @@ static void cmd_print_help(void)
         "  vf [slope <V/RPM>] show/set V/F curve\r\n"
         "  limit [A]           show/set soft current limit\r\n"
         "  vbus [uv|ov <V>]    show/set bus undervolt/overvolt protection\r\n"
+        "  temp [ot <C>]       show/set overtemperature protection\r\n"
         " Tuning:\r\n"
         "  current [bw <rad/s>]\r\n"
         "  tune [angle_delay|fw|pll ...] (RAM only)\r\n"
@@ -1074,6 +1080,22 @@ static void cmd_execute(char *line)
             foc_cmd_print("err: vbus [uv <5.0..%.1fV> | ov <%.1f..60.0V>]\r\n",
                           (double)(g_foc_vbus_ov_threshold_v - 0.5f),
                           (double)(g_foc_vbus_uv_threshold_v + 0.5f));
+        }
+
+    } else if (strcmp(cmd, "temp") == 0) {
+        if (arg1 == 0) {
+            foc_cmd_print("temp=%.1fC (raw=%u R=%.0fohm %s) ot=%.1fC\r\n",
+                          (double)g_foc_temp_diag.temp_c,
+                          (unsigned)g_foc_temp_diag.raw_adc,
+                          (double)g_foc_temp_diag.r_ntc_ohm,
+                          (g_foc_temp_diag.valid != 0U) ? "OK" : "INIT",
+                          (double)g_foc_temp_ot_threshold_c);
+        } else if ((strcmp(arg1, "ot") == 0) && (has_val2 != 0U) && (arg3 == 0) &&
+                   (val2 >= 40.0f) && (val2 <= 130.0f)) {
+            g_foc_temp_ot_threshold_c = val2;
+            foc_cmd_print_resp("temp ot=%.1fC\r\n", (double)g_foc_temp_ot_threshold_c);
+        } else {
+            foc_cmd_print("err: temp [ot <40.0..130.0C>]\r\n");
         }
 
     } else if (strcmp(cmd, "ident") == 0) {

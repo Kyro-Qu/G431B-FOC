@@ -11,6 +11,8 @@ MDK-ARM/FOC_G431/*.dep
 MDK-ARM/FOC_G431/*.iex
 MDK-ARM/FOC_G431/*.txt
 MDK-ARM/FOC_G431/*.Bak
+MDK-ARM/FOC_G431/*.__i
+MDK-ARM/FOC_G431/*._ia
 MDK-ARM/*.txt
 MDK-ARM/*.lst
 MDK-ARM/*.bak

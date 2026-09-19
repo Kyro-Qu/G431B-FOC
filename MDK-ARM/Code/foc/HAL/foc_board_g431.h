@@ -101,12 +101,28 @@ extern volatile foc_vbus_diag_t g_foc_vbus_diag;
 extern volatile float g_foc_vbus_uv_threshold_v;
 extern volatile float g_foc_vbus_ov_threshold_v;
 
-/** 初始化 PA0 模拟输入及 ADC1 Regular 序列（保持电流注入序列不变） */
+/* ---- 功率级温度实时采样接口（PB14 / ADC1_IN5） ---- */
+typedef struct {
+    volatile uint16_t raw_adc;       /* 最新 ADC1_IN5 原始采样值 0..4095 */
+    volatile float    temp_c;        /* 一阶低通滤波后的温度真值 °C */
+    volatile float    r_ntc_ohm;     /* 实时计算的 NTC 阻值 Ω */
+    volatile uint8_t  valid;         /* 1=已完成至少一次有效转换 */
+    volatile uint32_t sample_count;  /* 采样累计计数 */
+} foc_temp_diag_t;
+
+extern volatile foc_temp_diag_t g_foc_temp_diag;
+
+/* 过温保护阈值（°C） */
+extern volatile float g_foc_temp_ot_threshold_c;
+
+/** 初始化 PA0/PB14 模拟输入及 ADC1 Regular 序列（保持电流注入序列不变） */
 void foc_board_vbus_init(void);
-/** 周期性触发并更新母线电压（主循环 100Hz 轮询调用） */
+/** 周期性触发并交替更新母线电压与功率级温度（主循环 100~200Hz 轮询调用） */
 void foc_board_vbus_update(void);
 /** 读取当前实时测得的母线电压 V（未就绪时回退返回 FOC_UDC_V 标称值） */
 float foc_board_get_vbus_v(void);
+/** 读取当前实时测得的功率级温度 °C（未就绪时回退返回 25.0°C 标称常温） */
+float foc_board_get_temp_c(void);
 /** 将安全合法的母线电压更新进轴0功率级驱动接口（供控制环与弱磁闭环使用） */
 void foc_board_update_driver_vbus(float vbus_v);
 

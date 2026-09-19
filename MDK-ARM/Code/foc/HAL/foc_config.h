@@ -83,6 +83,17 @@
 #define FOC_VBUS_OVERVOLT_THRESHOLD_V  18.5f         /* 过压跳闸门槛 V（4S 满电 16.8V + 制动回充裕量） */
 #define FOC_VBUS_FAULT_TIMEOUT_MS      100U          /* 异常持续 100ms 确认跳闸（防电机启停瞬态下冲误报） */
 
+/* ---- 功率级温度采样与保护（NTCG163JF103FT1 @ PB14 / ADC1_IN5） ---- */
+#define FOC_TEMP_ENABLE                1U            /* 1: 启用板载 NTC 温度采样 */
+#define FOC_TEMP_R_PULLDOWN_OHM        4700.0f       /* 下拉分压电阻 4.7kΩ ±1% */
+#define FOC_TEMP_R0_OHM                10000.0f      /* NTC 25°C 标称阻值 10kΩ */
+#define FOC_TEMP_T0_K                  298.15f       /* 参考温度 25°C 对应绝对温度 (273.15 + 25.0) */
+#define FOC_TEMP_B_VALUE               3435.0f       /* NTCG163JF103FT1 B25/85 标称常数 */
+#define FOC_TEMP_LPF_ALPHA             0.05f         /* 慢速一阶滤波系数 */
+#define FOC_TEMP_OVERTEMP_THRESHOLD_C  85.0f         /* 过温跳闸门槛 °C（功率级过热保护） */
+#define FOC_TEMP_OVERTEMP_RECOVERY_C   70.0f         /* 过温恢复门槛 °C */
+#define FOC_TEMP_FAULT_TIMEOUT_MS      500U          /* 持续超温 500ms 确认跳闸 */
+
 /* ======================== 3. 电机 0 参数（DJI 2312S 实测） ======================== */
 
 /* 7 对极（12N14P 外转子）：DJI 2312S 官方真值（12槽14极） */

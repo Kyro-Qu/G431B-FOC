@@ -360,11 +360,13 @@ void foc_telemetry_slow_tick(void)
             fault = (uint8_t)(0x10U + g_current_shunt_diag.fault_code);
         }
         uint8_t cpu_pct = (g_foc_cpu_diag.load_pct > 100.0f) ? 100U : (uint8_t)g_foc_cpu_diag.load_pct;
+        float temp_val = foc_board_get_temp_c();
+        int8_t temp_c = (int8_t)((temp_val >= 0.0f) ? (temp_val + 0.5f) : (temp_val - 0.5f));
 
         tx_len = foc_stp_pack_status(
             s_slow_buf, (uint16_t)sizeof(s_slow_buf), s_slow_seq++, now,
             (uint16_t)(g_foc_vbus_diag.voltage_v * 100.0f),
-            fault, (uint8_t)m0->state, 0, cpu_pct
+            fault, (uint8_t)m0->state, temp_c, cpu_pct
         );
         if (tx_len > 0U) {
             if (HAL_UART_Transmit_DMA(&huart2, s_slow_buf, tx_len) == HAL_OK) {

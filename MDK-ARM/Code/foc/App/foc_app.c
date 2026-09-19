@@ -371,6 +371,26 @@ void foc_app_task(void)
     }
 #endif
 
+#if FOC_TEMP_ENABLE
+    /* 功率级过温 (OVERTEMP) 安全保护。
+     * 只有在采样稳定生效（完成至少 10 次采样建立稳态）后才参与判定，杜绝启动初期误触发。 */
+    if ((g_foc_temp_diag.valid != 0U) && (g_foc_temp_diag.sample_count >= 10U)) {
+        static uint32_t s_ot_start_tick = 0U;
+        uint32_t now = HAL_GetTick();
+        float temp_c = g_foc_temp_diag.temp_c;
+
+        if (temp_c > g_foc_temp_ot_threshold_c) {
+            if (s_ot_start_tick == 0U) {
+                s_ot_start_tick = now;
+            } else if ((now - s_ot_start_tick) >= FOC_TEMP_FAULT_TIMEOUT_MS) {
+                foc_motor_fault(m0, FOC_FAULT_OVERTEMP);
+            }
+        } else {
+            s_ot_start_tick = 0U;
+        }
+    }
+#endif
+
     /* 校准与参数辨识状态机 */
     foc_calib_task();
     foc_ident_task();

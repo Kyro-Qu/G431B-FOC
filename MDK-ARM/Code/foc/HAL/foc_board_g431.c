@@ -12,6 +12,7 @@
 
 #include "foc_board_g431.h"
 #include "main.h"
+#include <math.h>
 #include "../App/foc_app.h"
 #include "../App/foc_calib.h"
 #include "../Driver/current/current_shunt.h"
@@ -302,7 +303,7 @@ void foc_board_watchdog_kick(void)
     IWDG->KR = 0x0000AAAAU;
 }
 
-/* ======================== 母线电压实时采样（PA0 / ADC1_IN1） ======================== */
+/* ======================== 慢速模拟量实时采样（PA0: VBUS, PB14: TEMP） ======================== */
 
 volatile foc_vbus_diag_t g_foc_vbus_diag = {
     .raw_adc = 0U,
@@ -311,10 +312,25 @@ volatile foc_vbus_diag_t g_foc_vbus_diag = {
     .sample_count = 0U
 };
 
+volatile foc_temp_diag_t g_foc_temp_diag = {
+    .raw_adc = 0U,
+    .temp_c = 25.0f,
+    .r_ntc_ohm = FOC_TEMP_R0_OHM,
+    .valid = 0U,
+    .sample_count = 0U
+};
+
 volatile float g_foc_vbus_uv_threshold_v = FOC_VBUS_UNDERVOLT_THRESHOLD_V;
 volatile float g_foc_vbus_ov_threshold_v = FOC_VBUS_OVERVOLT_THRESHOLD_V;
+volatile float g_foc_temp_ot_threshold_c = FOC_TEMP_OVERTEMP_THRESHOLD_C;
 
-static uint32_t s_vbus_last_tick = 0U;
+typedef enum {
+    ANALOG_CH_VBUS = 0,
+    ANALOG_CH_TEMP = 1
+} analog_ch_state_t;
+
+static analog_ch_state_t s_analog_cur_ch = ANALOG_CH_VBUS;
+static uint32_t s_analog_last_tick = 0U;
 
 void foc_board_vbus_init(void)
 {
@@ -322,16 +338,35 @@ void foc_board_vbus_init(void)
     g_foc_vbus_diag.voltage_v = FOC_UDC_V;
     g_foc_vbus_diag.valid = 0U;
     g_foc_vbus_diag.sample_count = 0U;
-    s_vbus_last_tick = HAL_GetTick();
 
-    /* 确保 PA0（ADC1_IN1）规则通道在 current_shunt_init() 重新校准后正确配置：
-     * 1. 序列长度 = 1（单个转换）；
-     * 2. Rank 1 = Channel 1 (PA0)；
-     * 3. 采样时间 = 92.5 cycles（匹配 16.3kΩ 分压阻抗）。
-     */
+    g_foc_temp_diag.raw_adc = 0U;
+    g_foc_temp_diag.temp_c = 25.0f;
+    g_foc_temp_diag.r_ntc_ohm = FOC_TEMP_R0_OHM;
+    g_foc_temp_diag.valid = 0U;
+    g_foc_temp_diag.sample_count = 0U;
+
+    s_analog_last_tick = HAL_GetTick();
+    s_analog_cur_ch = ANALOG_CH_VBUS;
+
+    /* 配置 PB14 为模拟输入（Temp_ADC -> ADC1_IN5） */
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    {
+        GPIO_InitTypeDef gpio_init = {0};
+        gpio_init.Pin = GPIO_PIN_14;
+        gpio_init.Mode = GPIO_MODE_ANALOG;
+        gpio_init.Pull = GPIO_NOPULL;
+        HAL_GPIO_Init(GPIOB, &gpio_init);
+    }
+
+    /* 规则组初始配置为 Channel 1 (PA0, VBUS)，单次非扫描模式 */
     LL_ADC_REG_SetSequencerLength(ADC1, LL_ADC_REG_SEQ_SCAN_DISABLE);
     LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_1, LL_ADC_CHANNEL_1);
     LL_ADC_SetChannelSamplingTime(ADC1, LL_ADC_CHANNEL_1, LL_ADC_SAMPLINGTIME_92CYCLES_5);
+}
+
+void foc_board_temp_init(void)
+{
+    /* 已在 foc_board_vbus_init 中统一完成 */
 }
 
 void foc_board_vbus_update(void)
@@ -339,35 +374,70 @@ void foc_board_vbus_update(void)
 #if FOC_VBUS_ENABLE
     uint32_t now = HAL_GetTick();
 
-    if ((uint32_t)(now - s_vbus_last_tick) < FOC_VBUS_SAMPLE_INTERVAL_MS) {
+    /* 5ms 轮询节拍：VBUS 与 TEMP 每次交替推进，各保持 ~100Hz 刷新 */
+    if ((uint32_t)(now - s_analog_last_tick) < 5U) {
         return;
     }
-    s_vbus_last_tick = now;
+    s_analog_last_tick = now;
 
     /* 非阻塞状态机式转换：
-     * 1. 若当前没有规则转换正在进行，启动一次软件单次转换；
-     * 2. 若已有转换完成标志（EOC），读取结果并应用一阶滤波。
-     * 绝不使用阻塞等待 while(EOC)，完全零开销防中断饥饿。 */
+     * 1. 若当前规则转换完成（EOC置位），读取本次通道转换结果；
+     * 2. 根据 s_analog_cur_ch 处理对应物理量并切换为下一个通道；
+     * 3. 绝不阻塞等待，对 16kHz 电流注入中断完全零干扰。 */
     if (LL_ADC_IsActiveFlag_EOC(ADC1) != 0U) {
         uint32_t raw = LL_ADC_REG_ReadConversionData12(ADC1);
         LL_ADC_ClearFlag_EOC(ADC1);
 
-        /* 换算母线电压: Vbus = Vadc / 分压比
-         * Vadc = raw * VREF / 4095.0f */
-        float vadc = (float)raw * (FOC_VBUS_ADC_VREF / 4095.0f);
-        float vbus_meas = vadc / FOC_VBUS_PARTITIONING_FACTOR;
+        if (s_analog_cur_ch == ANALOG_CH_VBUS) {
+            /* 处理 VBUS 采样 (PA0 / ADC1_IN1) */
+            float vadc = (float)raw * (FOC_VBUS_ADC_VREF / 4095.0f);
+            float vbus_meas = vadc / FOC_VBUS_PARTITIONING_FACTOR;
 
-        if (g_foc_vbus_diag.valid == 0U) {
-            g_foc_vbus_diag.voltage_v = vbus_meas;
-            g_foc_vbus_diag.valid = 1U;
+            if (g_foc_vbus_diag.valid == 0U) {
+                g_foc_vbus_diag.voltage_v = vbus_meas;
+                g_foc_vbus_diag.valid = 1U;
+            } else {
+                g_foc_vbus_diag.voltage_v += FOC_VBUS_LPF_ALPHA * (vbus_meas - g_foc_vbus_diag.voltage_v);
+            }
+            g_foc_vbus_diag.raw_adc = (uint16_t)raw;
+            g_foc_vbus_diag.sample_count++;
+
+            /* 切换下一拍转换为 Channel 5 (PB14 / TEMP) */
+            s_analog_cur_ch = ANALOG_CH_TEMP;
+            LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_1, LL_ADC_CHANNEL_5);
+            LL_ADC_SetChannelSamplingTime(ADC1, LL_ADC_CHANNEL_5, LL_ADC_SAMPLINGTIME_92CYCLES_5);
         } else {
-            g_foc_vbus_diag.voltage_v += FOC_VBUS_LPF_ALPHA * (vbus_meas - g_foc_vbus_diag.voltage_v);
+            /* 处理功率级 TEMP 采样 (PB14 / ADC1_IN5, NTCG163JF103FT1) */
+            g_foc_temp_diag.raw_adc = (uint16_t)raw;
+
+            /* 有效 ADC 范围：防止对地短路(0)或对3V3短路(4095)除零溢出 */
+            if ((raw >= 20U) && (raw <= 4080U)) {
+                /* 分压比: Vadc / Vcc = raw / 4095 = R41 / (R_ntc + R41)
+                 * R_ntc = R41 * (4095 / raw - 1) */
+                float r_ntc = FOC_TEMP_R_PULLDOWN_OHM * ((4095.0f / (float)raw) - 1.0f);
+                g_foc_temp_diag.r_ntc_ohm = r_ntc;
+
+                /* B 参数方程: 1/T = 1/T0 + (1/B) * ln(R/R0) */
+                float inv_t = (1.0f / FOC_TEMP_T0_K) + (1.0f / FOC_TEMP_B_VALUE) * logf(r_ntc / FOC_TEMP_R0_OHM);
+                float temp_meas = (1.0f / inv_t) - 273.15f;
+
+                if (g_foc_temp_diag.valid == 0U) {
+                    g_foc_temp_diag.temp_c = temp_meas;
+                    g_foc_temp_diag.valid = 1U;
+                } else {
+                    g_foc_temp_diag.temp_c += FOC_TEMP_LPF_ALPHA * (temp_meas - g_foc_temp_diag.temp_c);
+                }
+                g_foc_temp_diag.sample_count++;
+            }
+
+            /* 切换下一拍转换为 Channel 1 (PA0 / VBUS) */
+            s_analog_cur_ch = ANALOG_CH_VBUS;
+            LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_1, LL_ADC_CHANNEL_1);
+            LL_ADC_SetChannelSamplingTime(ADC1, LL_ADC_CHANNEL_1, LL_ADC_SAMPLINGTIME_92CYCLES_5);
         }
-        g_foc_vbus_diag.raw_adc = (uint16_t)raw;
-        g_foc_vbus_diag.sample_count++;
     }
 
-    /* 若规则通道处于空闲（没有正在转换），触发下一次转换 */
+    /* 若规则通道空闲，触发启动下一次转换 */
     if (LL_ADC_REG_IsConversionOngoing(ADC1) == 0U) {
         LL_ADC_REG_StartConversion(ADC1);
     }
@@ -382,6 +452,16 @@ float foc_board_get_vbus_v(void)
     }
 #endif
     return FOC_UDC_V;
+}
+
+float foc_board_get_temp_c(void)
+{
+#if FOC_TEMP_ENABLE
+    if (g_foc_temp_diag.valid != 0U) {
+        return g_foc_temp_diag.temp_c;
+    }
+#endif
+    return 25.0f;
 }
 
 void foc_board_update_driver_vbus(float vbus_v)
