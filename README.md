@@ -14,32 +14,34 @@
 - **位置模式梯形轨迹规划**（限速限加速度平滑运动 + 速度前馈，ODrive trap_traj）
 - 上电自动完成三相电流零偏校准；编码器 D 轴对齐/Z 脉冲搜索仅在切入
   闭环后由按键或 `c` 命令启动，状态机全程限流保护
-- **Flash 参数存储**（串口 `save`）：电机参数/PID/校准偏移掉电保存，
+- **Flash 参数存储**（串口 `conf write`）：电机参数/PID/校准偏移掉电保存，
   重启自动加载 + 快速索引搜索（免对齐吸附，ODrive `index_search` 语义）
-- **七层保护**：双阈值过流、NaN 防护、堵转保护、参数自检、独立看门狗、
-  故障锁存状态机、TAMP 断电黑匣子（详见 Docs/06）
+- **八重安全保护体系**：双阈值过流、NaN 防护、堵转保护、纯无感失锁安全停机、参数自检、
+  母线欠压/过压保护 (UVLO/OVLO)、板载 NTC 功率级过温保护 (OVERTEMP)、独立看门狗与 TAMP 断电黑匣子（详见 Docs/06）
+- **板载 NTC 温度感知与高低速解耦**：PB14 规则组时分复用采集 TDK NTCG163JF103FT1，B 参数方程精准解算，
+  超温（>85°C）500ms 保护停机；10Hz STATUS 心跳帧携带实时温度并在上位机 HUD 预警
 - **默认单电机，双轴框架完整预留**：算法层零全局状态，`FOC_NUM_AXES` 改 2 即开双轴
 - 串口命令行（6.5 Mbaud）在线调模式/目标/PID + FOC-STP 自解释掩码遥测
   （32 通道字典任意订阅、10 Hz 状态心跳、故障事件、CRC16，配套网页上位机
   [foc-studio](https://kyroqu.xyz/foc-studio/)）+ DWT 实测快环 CPU 占用
-- 预留模块：无感磁链观测器+PLL（VESC 式）、霍尔传感器驱动
+- 预留/已实现特性：无感磁链观测器+PLL（VESC 纯无感启动与闭环接管）、霍尔传感器驱动、144 点齿槽转矩补偿
 
 > 调研范围除 SimpleFOC / ODrive / VESC / ST MCSDK 外，还包括
 > [MESC](https://github.com/davidmolony/MESC_Firmware)（HFI 低速无感）与
-> [moteus](https://github.com/mjbots/moteus)（同为 STM32G4 的位置控制标杆）——
-> HFI、抗齿槽标定、热模型列入后续路线图。
+> [moteus](https://github.com/mjbots/moteus)（同为 STM32G4 的位置控制标杆）。
 
-## 文档（八篇；不知道读哪篇先看 [文档地图](Docs/README.md)）
+## 文档（完整体系；不知道读哪篇先看 [文档地图](Docs/README.md)）
 
 | 文档 | 内容 |
 | ---- | ---- |
+| [Docs/00_底层原理_从变换到SVPWM与快环数据流.md](Docs/00_底层原理_从变换到SVPWM与快环数据流.md) | 数学推导 + 公式 + 逐行代码：Clarke/Park/SVPWM/采样链/快环/参数映射 |
 | [Docs/01_FOC原理入门.md](Docs/01_FOC原理入门.md) | 小白向：FOC 是什么、Clarke/Park、SVPWM、级联环 |
 | [Docs/02_工程架构.md](Docs/02_工程架构.md) | 分层设计、接口表、双电机原理、与开源项目对照 |
 | [Docs/03_代码走读.md](Docs/03_代码走读.md) | 逐文件讲实现，关键函数逐段解释 |
-| [Docs/04_上手指南.md](Docs/04_上手指南.md) | 编译烧录、逐层验证流程、故障对照表 |
+| [Docs/04_上手指南.md](Docs/04_上手指南.md) | 硬件准备→编译→逐层验证→故障表 |
 | [Docs/05_双电机扩展.md](Docs/05_双电机扩展.md) | 开启双轴、虚拟轴演示、接第二套硬件的完整步骤 |
-| [Docs/06_稳定性与保护.md](Docs/06_稳定性与保护.md) | 七层保护逐层讲解：过流/NaN/堵转/看门狗/Flash存储/黑匣子 |
-| [Docs/07_移植指南.md](Docs/07_移植指南.md) | 换板卡/换 STM32 型号/换传感器/换采样拓扑的逐步清单 |
+| [Docs/06_稳定性与保护.md](Docs/06_稳定性与保护.md) | 八重保护逐层讲解：过流/NaN/堵转/欠压过压/过温/看门狗/Flash存储/黑匣子 |
+| [Docs/07_移植指南.md](Docs/07_移植指南.md) | 换板/换芯片/换传感器/换采样拓扑的逐步清单 |
 | [Docs/08_调参与调试手册.md](Docs/08_调参与调试手册.md) | 工具软件用法、适配新电机全流程、PID 逐环调法与波形判读 |
 | [Docs/09_预留特性接入手册.md](Docs/09_预留特性接入手册.md) | 无感/HFI/抗齿槽/弱磁/CAN：预留代码怎么一步步接进工程并调试 |
 | [Docs/11_FOC-STP遥测协议.md](Docs/11_FOC-STP遥测协议.md) | 遥测协议规格、通道字典、`telem` 命令与三端（C/JS/Python）参考实现 |
