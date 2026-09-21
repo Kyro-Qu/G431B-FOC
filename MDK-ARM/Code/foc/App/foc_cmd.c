@@ -279,7 +279,12 @@ static void cmd_print_help(void)
         "  tune [angle_delay|fw|pll ...] (RAM only)\r\n"
         "  vel [kp|ki|filter|lpf|ramp|ff|start|start_rpm <value>]\r\n"
         "  vel [track|track_limit|track_rpm <value>]\r\n"
-        "  pos [kp|ki|vkp|accel|vmax <value>]\r\n"
+        "  pos                 show pos state (abs/rel/origin/target)\r\n"
+        "  pos abs <val>[rad|deg|turn]   set absolute physical goal\r\n"
+        "  pos rel <val>[rad|deg|turn]   set relative-to-origin goal\r\n"
+        "  pos step <val>[rad|deg|turn]  step relative to current pos\r\n"
+        "  pos zero / pos origin         set current pos as origin\r\n"
+        "  pos [kp|ki|vkp|accel|vmax <value>]  pos loop tuning\r\n"
         "  ident [full|rs|pp|flux|show|apply] param identification\r\n"
         "  acog                anticogging query/start/finish/enable\r\n"
         " Diagnostics:\r\n"
@@ -445,6 +450,41 @@ static uint8_t cmd_parse_float(const char *s, float *out)
     return 1U;
 }
 
+/**
+ * @brief 解析角度数值字符串，支持 rad/deg/turn 单位后缀
+ * @param s 输入字符串，例如 "1.57", "1.57rad", "90deg", "-180deg", "0.5turn"
+ * @param out_rad 输出弧度值
+ * @return 1 成功，0 失败
+ */
+static uint8_t cmd_parse_angle(const char *s, float *out_rad)
+{
+    char *end = 0;
+    float v;
+
+    if ((s == 0) || (*s == '\0')) {
+        return 0U;
+    }
+    v = strtof(s, &end);
+    if (end == s) {
+        return 0U;
+    }
+    if ((v != v) || ((v - v) != 0.0f)) {
+        return 0U;
+    }
+
+    if ((*end == '\0') || (strcmp(end, "rad") == 0)) {
+        *out_rad = v;
+    } else if (strcmp(end, "deg") == 0) {
+        *out_rad = v * (3.14159265358979323846f / 180.0f);
+    } else if (strcmp(end, "turn") == 0) {
+        *out_rad = v * (2.0f * 3.14159265358979323846f);
+    } else {
+        return 0U;
+    }
+
+    return 1U;
+}
+
 static void cmd_conf_execute(foc_motor_t *m, const char *action)
 {
     uint8_t flash_ok;
@@ -453,9 +493,13 @@ static void cmd_conf_execute(foc_motor_t *m, const char *action)
     uint8_t with_calib;
 
     if ((action == 0) || (strcmp(action, "read") == 0)) {
+        float flux_calc = 0.0f;
+        if ((m->params.ke > 0.001f) && (m->params.pole_pairs >= 1.0f)) {
+            flux_calc = m->params.ke / (1.7320508f * (6.2831853f * m->params.pole_pairs * 1000.0f / 60.0f));
+        }
         foc_cmd_print(
             "M%u conf params:\r\n"
-            "  pp=%.0f Rs=%.4f Ls=%.2fuH max_rpm=%.0f limit=%.2fA\r\n"
+            "  pp=%.0f Rs=%.4f Ls=%.2fuH max_rpm=%.0f limit=%.2fA flux=%.5f\r\n"
             "  bw=%.0f vp=%.4f vi=%.4f ramp=%.0f lpf=%.5fs\r\n"
             "  track_kp=%.3f track_limit=%.3f\r\n"
             "  calib: dir=%d offset=%.4frad (valid=%u from_store=%u)\r\n"
@@ -466,6 +510,7 @@ static void cmd_conf_execute(foc_motor_t *m, const char *action)
             (double)(m->params.ls_henry * 1e6f),
             (double)m->params.max_rpm,
             (double)m->params.max_current_a,
+            (double)flux_calc,
             (double)m->cfg.current_bw_rads,
             (double)m->pid_vel.kp,
             (double)m->pid_vel.ki,
@@ -595,16 +640,87 @@ static void cmd_execute(char *line)
 
     } else if (strcmp(cmd, "motor") == 0) {
         if (arg1 == 0) {
-            foc_cmd_print("selected motor M%u\r\n", (unsigned)cur_axis);
+            float flux_w = 0.0f;
+            if ((m->params.ke > 0.001f) && (m->params.pole_pairs >= 1.0f)) {
+                flux_w = m->params.ke / (1.7320508f * (6.2831853f * m->params.pole_pairs * 1000.0f / 60.0f));
+            }
+            foc_cmd_print("M%u: pp=%.0f Rs=%.4f Ls=%.2fuH max_rpm=%.0f limit=%.2fA flux=%.5f\r\n",
+                          (unsigned)cur_axis, (double)m->params.pole_pairs,
+                          (double)m->params.rs_ohm, (double)(m->params.ls_henry * 1e6f),
+                          (double)m->params.max_rpm, (double)m->params.max_current_a,
+                          (double)flux_w);
         } else if ((arg2 == 0) && (has_val1 != 0U) &&
                    (val1 >= 0.0f) &&
                    (val1 == (float)(uint8_t)val1) &&
                    ((uint8_t)val1 < (uint8_t)FOC_NUM_AXES)) {
             cur_axis = (uint8_t)val1;
             foc_cmd_print("selected motor M%u\r\n", (unsigned)cur_axis);
+        } else if ((strcmp(arg1, "pp") == 0) && (has_val2 != 0U) && (arg3 == 0) &&
+                   (val2 >= 1.0f) && (val2 <= 50.0f)) {
+            if (m->state != FOC_STATE_IDLE) {
+                foc_cmd_print("err: motor pp needs IDLE\r\n");
+            } else {
+                m->params.pole_pairs = val2;
+                foc_cmd_print("M%u pp=%.0f\r\n", (unsigned)cur_axis, (double)val2);
+            }
+        } else if (((strcmp(arg1, "max_rpm") == 0) || (strcmp(arg1, "maxrpm") == 0)) &&
+                   (has_val2 != 0U) && (arg3 == 0) &&
+                   (val2 >= 100.0f) && (val2 <= 50000.0f)) {
+            m->params.max_rpm = val2;
+            foc_cmd_print("M%u max_rpm=%.0f\r\n", (unsigned)cur_axis, (double)val2);
+        } else if ((strcmp(arg1, "rs") == 0) && (has_val2 != 0U) && (arg3 == 0) &&
+                   (val2 >= 0.0001f) && (val2 <= 100.0f)) {
+            if (m->state != FOC_STATE_IDLE) {
+                foc_cmd_print("err: motor rs needs IDLE\r\n");
+            } else {
+                m->params.rs_ohm = val2;
+                foc_cmd_print("M%u Rs=%.4fohm\r\n", (unsigned)cur_axis, (double)val2);
+            }
+        } else if ((strcmp(arg1, "ls") == 0) && (has_val2 != 0U) && (arg3 == 0) &&
+                   (val2 >= 0.01f) && (val2 <= 100000.0f)) {
+            if (m->state != FOC_STATE_IDLE) {
+                foc_cmd_print("err: motor ls needs IDLE\r\n");
+            } else {
+                m->params.ls_henry = val2 * 1e-6f;
+                foc_cmd_print("M%u Ls=%.2fuH\r\n", (unsigned)cur_axis, (double)val2);
+            }
+        } else if ((strcmp(arg1, "flux") == 0) && (has_val2 != 0U) && (arg3 == 0) &&
+                   (val2 >= 0.00001f) && (val2 <= 1.0f)) {
+            if (m->state != FOC_STATE_IDLE) {
+                foc_cmd_print("err: motor flux needs IDLE\r\n");
+            } else {
+                float pp = m->params.pole_pairs;
+                if (pp < 1.0f) pp = 1.0f;
+                m->params.ke = 1.7320508f * val2 * (6.2831853f * pp * 1000.0f / 60.0f);
+                foc_cmd_print("M%u flux=%.5fWb (Ke=%.2f)\r\n",
+                              (unsigned)cur_axis, (double)val2, (double)m->params.ke);
+            }
+        } else if ((strcmp(arg1, "kv") == 0) && (has_val2 != 0U) && (arg3 == 0) &&
+                   (val2 >= 10.0f) && (val2 <= 10000.0f)) {
+            if (m->state != FOC_STATE_IDLE) {
+                foc_cmd_print("err: motor kv needs IDLE\r\n");
+            } else {
+                float pp = m->params.pole_pairs;
+                if (pp < 1.0f) pp = 1.0f;
+                float flux = 60.0f / (1.7320508f * 6.2831853f * pp * val2);
+                m->params.ke = 1.7320508f * flux * (6.2831853f * pp * 1000.0f / 60.0f);
+                foc_cmd_print("M%u kv=%.0f (flux=%.5fWb, Ke=%.2f)\r\n",
+                              (unsigned)cur_axis, (double)val2, (double)flux, (double)m->params.ke);
+            }
         } else {
-            foc_cmd_print("err: motor 0..%u\r\n",
+            foc_cmd_print("err: motor [0..%u|pp|max_rpm|rs|ls|flux|kv]\r\n",
                           (unsigned)(FOC_NUM_AXES - 1U));
+        }
+
+    } else if ((strcmp(cmd, "max_rpm") == 0) || (strcmp(cmd, "maxrpm") == 0)) {
+        if (arg1 == 0) {
+            foc_cmd_print("M%u max_rpm=%.0f\r\n", (unsigned)cur_axis, (double)m->params.max_rpm);
+        } else if ((has_val1 != 0U) && (arg2 == 0) &&
+                   (val1 >= 100.0f) && (val1 <= 50000.0f)) {
+            m->params.max_rpm = val1;
+            foc_cmd_print("M%u max_rpm=%.0f\r\n", (unsigned)cur_axis, (double)val1);
+        } else {
+            foc_cmd_print("err: max_rpm <100..50000>\r\n");
         }
 
     } else if (strcmp(cmd, "enable") == 0) {
@@ -977,16 +1093,59 @@ static void cmd_execute(char *line)
         }
 
     } else if (strcmp(cmd, "pos") == 0) {
+        float angle_val = 0.0f;
         if (arg1 == 0) {
+            float cur_abs = foc_motor_get_pos_abs(m);
+            float cur_rel = foc_motor_get_pos_rel(m);
+            float tgt_abs = foc_motor_get_target_pos_abs(m);
+            float tgt_rel = m->target;
             foc_cmd_print(
-                "M%u pos kp=%.3fA/rad ki=%.3fA/(rad*s)\r\n"
-                "vkp=%.4fA/RPM "
+                "M%u pos: abs=%.4frad (%.2fdeg, %.3fturn) "
+                "rel=%.4frad (%.2fdeg, %.3fturn) "
+                "origin=%.4frad target=%.4frad (abs_tgt=%.4frad)\r\n"
+                "  kp=%.3fA/rad ki=%.3fA/(rad*s) vkp=%.4fA/RPM "
                 "accel=%.0fRPM/s vmax=%.0fRPM\r\n",
-                (unsigned)cur_axis, (double)m->pid_pos.kp,
-                (double)m->pid_pos.ki,
+                (unsigned)cur_axis,
+                (double)cur_abs, (double)(cur_abs * 57.2957795f), (double)(cur_abs * 0.15915494f),
+                (double)cur_rel, (double)(cur_rel * 57.2957795f), (double)(cur_rel * 0.15915494f),
+                (double)m->pos_origin_rad, (double)tgt_rel, (double)tgt_abs,
+                (double)m->pid_pos.kp, (double)m->pid_pos.ki,
                 (double)m->cfg.pos_vel_kp,
                 (double)m->cfg.traj_accel_rpm_s,
                 (double)m->cfg.pos_vel_limit_rpm);
+        } else if ((strcmp(arg1, "zero") == 0) || (strcmp(arg1, "origin") == 0)) {
+            if (arg2 != 0) {
+                foc_cmd_print("err: pos zero (no extra args)\r\n");
+            } else {
+                foc_motor_set_origin(m);
+                foc_cmd_print_resp("M%u pos origin reset to actual pos=%.4frad (rel=0.000rad)\r\n",
+                                   (unsigned)cur_axis, (double)m->pos_origin_rad);
+            }
+        } else if (strcmp(arg1, "abs") == 0) {
+            if ((arg2 == 0) || (arg3 != 0) || (cmd_parse_angle(arg2, &angle_val) == 0U)) {
+                foc_cmd_print("err: pos abs <val>[rad|deg|turn]\r\n");
+            } else {
+                foc_motor_set_pos_abs(m, angle_val);
+                foc_cmd_print_resp("M%u pos abs=%.4frad (rel_target=%.4frad)\r\n",
+                                   (unsigned)cur_axis, (double)angle_val, (double)m->target);
+            }
+        } else if (strcmp(arg1, "rel") == 0) {
+            if ((arg2 == 0) || (arg3 != 0) || (cmd_parse_angle(arg2, &angle_val) == 0U)) {
+                foc_cmd_print("err: pos rel <val>[rad|deg|turn]\r\n");
+            } else {
+                foc_motor_set_pos_rel(m, angle_val);
+                foc_cmd_print_resp("M%u pos rel=%.4frad (abs_target=%.4frad)\r\n",
+                                   (unsigned)cur_axis, (double)angle_val, (double)(m->pos_origin_rad + m->target));
+            }
+        } else if (strcmp(arg1, "step") == 0) {
+            if ((arg2 == 0) || (arg3 != 0) || (cmd_parse_angle(arg2, &angle_val) == 0U)) {
+                foc_cmd_print("err: pos step <delta>[rad|deg|turn]\r\n");
+            } else {
+                foc_motor_step_pos_rel(m, angle_val);
+                foc_cmd_print_resp("M%u pos step delta=%.4frad -> abs_target=%.4frad (rel_target=%.4frad)\r\n",
+                                   (unsigned)cur_axis, (double)angle_val,
+                                   (double)(m->pos_origin_rad + m->target), (double)m->target);
+            }
         } else if ((strcmp(arg1, "kp") == 0) &&
                    (has_val2 != 0U) && (arg3 == 0) &&
                    (val2 >= 0.0f) && (val2 <= 10000.0f)) {
@@ -1020,7 +1179,7 @@ static void cmd_execute(char *line)
                           (unsigned)cur_axis, (double)val2);
         } else {
             foc_cmd_print(
-                "err: pos [kp|ki|vkp|accel|vmax <value>]\r\n");
+                "err: pos [abs|rel|step|zero|origin|kp|ki|vkp|accel|vmax ...]\r\n");
         }
 
     } else if (strcmp(cmd, "limit") == 0) {

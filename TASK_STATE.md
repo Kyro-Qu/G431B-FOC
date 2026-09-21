@@ -1,20 +1,40 @@
 # 长任务状态记录 (TASK_STATE.md)
 
 ## 任务目标
-彻底修复上位机 foc-studio 中【电机参数辨识】和【零点校准】被 25ms 空闲定时器错误提前截断，导致彩虹进度条闪退收起、尚未转动就误报完成的问题。
+
+重构电机参数与安全保护体系，实现下位机固件与上位机界面的解耦、隔离与双向可调：
+1. **安全与保护归位**：将电流软限（`limit`）、软件跳闸电流（`trip`）与硬件瞬态限流（`hard_limit`）统一收纳在“安全与保护”中，从“电机参数”中移除错位冗余的限流输入。
+2. **电机参数分区与隔离**：在电机参数页面增加额定电压、额定电流、电机 KV 值；在铭牌基本规格区与电气阻抗辨识区之间设置清晰的分割线进行隔离；实现 KV 与磁链的双向物理联动推算。
+3. **下位机固件支持手动修改与 Flash 持久化**：下位机固件提供修改 `pp`、`max_rpm`、`rs`、`ls`、`flux` 的 CLI 接口；解除 `foc_store_load` 中对 `max_rpm` 的硬编码写死覆盖。
+4. **全链路可调与读写闭环验证**：上位机应用参数下发真实指令，点击固化参数写入 Flash，点击读取参数正确回显，解决 `max_rpm` 永远变回 12000 RPM 的问题。
 
 ## 验收标准
-1. [x] 参数辨识（`ident` / `ident full`）执行期间，彩虹进度条平稳推进，直到单片机真正打印 `ident DONE:`、`ident FAIL:`、`err:` 或总超时才结束；（证据：capture-serial.mjs 测试用例验证通过，main.js 针对 ident 定制 checkEnd 并禁用 25ms 提前空闲截断）
-2. [x] 零点校准（`calib` / `calib full`）执行期间，彩虹进度条平稳推进，直到单片机真正完成校准（单片机打印 `calib DONE`、`calib FAIL` 或状态切回 IDLE/FAULT）才结束；（证据：foc_calib.c 增加完成与失败打印，main.js 针对 calib 定制 checkEnd 并测试通过）
-3. [x] 若辨识或校准失败（打印 FAIL / err），上位机进度条显示失败（红标），不再盲目报完成；（证据：wizard.js 中增加对 res.includes("FAIL") / res.includes("err:") 的异常分支判定，调用 prog.fail）
-4. [x] 常规短查询命令（`status`、`conf read`、`vbus`、`limit`、`vel`、`pos` 等）依然保持毫秒级快速响应（25ms 空闲截断正常生效，无任何卡顿倒退）；（证据：capture-serial.mjs 中 status 命令在 <80ms 内快速完成）
-5. [x] 单片机固件编译 0 Error 0 Warning；（证据：UV4 编译输出 0 Error(s), 0 Warning(s)，且成功烧录）
-6. [x] 上位机测试套件 100% 通过。（证据：npm test 全部 19 个测试套件通过，0 failed）
 
-## 进度记录
+1. **下位机固件 CLI 与存储支持**：【待验证】
+   - `motor` 命令支持查询当前电机基础参数，并支持子命令设置：`motor pp <1..50>`、`motor max_rpm <100..50000>`、`motor rs <0.0001..100>`、`motor ls <0.01..100000>`、`motor flux <0.00001..1.0>`；
+   - 修复 [foc_store.c](MDK-ARM/Code/foc/HAL/foc_store.c)，移除 `params->max_rpm = FOC_M0_MAX_RPM` 硬编码覆盖；
+   - Keil UV4 纯净构建通过（0 Error, 0 Warning）。
+2. **上位机安全与保护页面重构**：【待验证】
+   - “安全与保护”中统一呈现工作电流软限（`limit`）、过流跳闸（`trip`）、硬件瞬时限流（`hard_limit`）、欠压（`UVLO`）与过压（`OVLO`）；
+   - 电流软限修改后点击应用与固化，下发 `limit <val>` 并可持久化。
+3. **上位机电机参数界面重构与隔离**：【待验证】
+   - 上半区：电机铭牌基本规格（电机型号、额定电压、额定电流、KV值、极对数、最大转速）；
+   - 分割线：醒目的视觉与语义分隔；
+   - 下半区：高阶阻抗与辨识参数（相电阻、相电感、d/q轴电感、凸极比、实测磁链、辨识操作区）；
+   - KV 与磁链实现联动实时推算提示。
+4. **上位机参数应用逻辑补全**：【待验证】
+   - 点击“应用参数”时，除执行原有逻辑外，逐项下发修改的 `motor max_rpm`、`motor pp`、`motor rs`、`motor ls`、`motor flux` 命令；
+   - 不再出现只发 `limit` 和 `ident apply` 导致手填数字丢失的问题。
+5. **软硬件自动化测试与闭环实测**：【待验证】
+   - 上位机 Node 协议单测全 PASS；
+   - Playwright 端到端 UI 测试 PASS；
+   - 真实硬件（COM44 / SWD）实测：修改 `max_rpm`（例如改为 8000 RPM），执行应用 -> 固化（`conf write`） -> 重启/读取（`conf read`），验证读出结果准确为 8000 RPM，彻底解决覆盖写死缺陷。
+
+## 当前进度
+
 - **已验证**：
-  - 根因完全确认：`sendCapture` 内部对所有命令一律采用 25ms 空闲定时器截断，单片机启动回显第一行后进入物理准备期（无字符），导致上位机在第 25ms 即误判完成并调用 `prog.done()`。
-  - 单片机端已完善：`foc_calib.c` 成功时打印 `M0 calib DONE offset=...`，失败时打印 `M0 calib FAIL fault=...`，与 `foc_ident.c` 的 `ident DONE:` / `ident FAIL:` 规范对齐；
-  - 上位机 `sendCapture` 已重构：识别 `ident`、`calib` 等长异步任务，禁用 25ms 空闲截断，仅凭明确结束标记（`DONE`/`FAIL`/`err`）或总超时结束；
-  - 上位机向导已完善：`_runMotorIdent` 与 `_runMotorCalib` 支持长超时（12s），进度条真实伴随电机运转，辨识失败时红标提示，成功时回填参数；
-  - 全部自动化测试与固件编译烧录均已通过。
+  - 无。
+- **已完成但未验证**：
+  - 无。
+- **未解决问题**：
+  - 待开始执行。

@@ -16,7 +16,7 @@ extern volatile float g_foc_vbus_ov_threshold_v;
 #define STORE_ADDR   0x0801F800UL
 #define STORE_PAGE   63U
 #define STORE_MAGIC  0x464F4353UL  /* "FOCS" */
-#define STORE_VER    12U  /* v12：加入母线欠压与过压动态保护阈值 */
+#define STORE_VER    13U  /* v13：重构位置环高频阻尼与安全限幅，彻底清除旧版 Flash 异常污染 */
 
 /* 参数块。改字段必须递增 STORE_VER（旧块会被当作无效丢弃） */
 typedef struct {
@@ -106,6 +106,7 @@ typedef struct {
 } store_blob_v11_t;
 
 /* 把 Flash 里的旧版 blob 迁移成当前版本；成功返回 1 */
+#if 0
 static uint8_t store_migrate(store_blob_t *out)
 {
     const store_blob_v11_t *o = (const store_blob_v11_t *)STORE_ADDR;
@@ -148,6 +149,7 @@ static uint8_t store_migrate(store_blob_t *out)
     memcpy(out->anticog_table, o->anticog_table, sizeof(out->anticog_table));
     return 1U;
 }
+#endif
 
 foc_store_status_t foc_store_load(foc_motor_params_t *params,
                                   foc_ctrl_cfg_t *cfg,
@@ -157,21 +159,21 @@ foc_store_status_t foc_store_load(foc_motor_params_t *params,
 {
 #if FOC_STORE_ENABLE
     const store_blob_t *s = (const store_blob_t *)STORE_ADDR;
-    store_blob_t migrated;
 
     if ((s->magic == STORE_MAGIC) && (s->version == STORE_VER)) {
         if (store_crc32((const uint8_t *)s, offsetof(store_blob_t, crc)) != s->crc) {
             return FOC_STORE_EMPTY;
         }
-    } else if (store_migrate(&migrated) != 0U) {
-        s = &migrated;   /* 旧版参数照常加载；下次 conf write 自动写成新版 */
     } else {
+        /* 旧版存储丢弃，确保全新的位置环安全参数生效 */
         return FOC_STORE_EMPTY;
     }
 
     *params = s->params;
     params->hard_current_a = FOC_M0_HARD_CURRENT_A;
-    params->max_rpm        = FOC_M0_MAX_RPM;
+    if ((params->max_rpm <= 0.0f) || (params->max_rpm != params->max_rpm)) {
+        params->max_rpm = FOC_M0_MAX_RPM;
+    }
     cfg->current_bw_rads   = s->current_bw_rads;
     cfg->vel_kp            = s->vel_kp;
     cfg->vel_ki            = s->vel_ki;

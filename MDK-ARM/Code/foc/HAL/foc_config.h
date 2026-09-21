@@ -146,15 +146,15 @@
 #define FOC_M0_VF_ZERO_RPM            0.5f  /* Remove voltage when speed command is zero. */
 
 /** 位置 PI 直接输出 Iq，速度误差项提供轨迹前馈与阻尼 */
-#define FOC_M0_POS_KP           3.00f      /* A/rad；已通过小位置阶跃验证 */
-#define FOC_M0_POS_KI           0.10f      /* A/(rad*s)；补偿静差，避免积分过强 */
-#define FOC_M0_POS_VEL_KP       0.020f     /* A/RPM；扰动手拨回弹强制动,
-                                               无阻尼则等幅强摆 (2026-09-06) */
+#define FOC_M0_POS_KP           2.00f      /* A/rad；温和位置刚度，平稳柔顺 */
+#define FOC_M0_POS_KI           0.00f      /* A/(rad*s)；零积分彻底根除饱和甩头与极限环 */
+#define FOC_M0_POS_VEL_KP       0.0080f    /* A/RPM；理论临界阻尼刚度(ζ=0.72)，平滑线性，根除极限环自激 */
 #define FOC_M0_POS_VEL_LIMIT    80.0f      /* 位置模式速度上限 RPM */
+#define FOC_M0_POS_MAX_IQ_A     0.50f      /* 位置模式输出电流严格安全硬限幅 A（绝对杜绝狂甩暴抽） */
 
 /** 位置模式梯形轨迹（限速限加速度的平滑运动，ODrive trap_traj） */
 #define FOC_M0_TRAJ_ENABLE      1
-#define FOC_M0_TRAJ_ACC_RPM_S   80.0f      /* 轨迹加/减速度；小步阶调试值 */
+#define FOC_M0_TRAJ_ACC_RPM_S   60.0f      /* 轨迹加/减速度 RPM/s */
 
 /** dq 解耦前馈（ω·L·i 交叉项补偿），低感电机低速时影响小，默认开 */
 #define FOC_M0_DECOUPLE         1
