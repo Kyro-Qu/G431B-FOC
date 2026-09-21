@@ -275,6 +275,10 @@ static void foc_velocity_start_reset(foc_motor_t *m)
 static void foc_motor_slow_loop(foc_motor_t *m)
 {
     const float dt = m->dt_fast * (float)m->slow_div;
+    /* 方向约定：用户帧 = 编码器帧。
+     * 外环输出 (iq_ref) 跨进电角度坐标系必须乘 calib.direction，
+     * 确保力矩/速度/位置形成严格负反馈闭环。纯无感主控模式下无感坐标系 dir 为 1.0。
+     */
     const float dir = ((m->angle_source == FOC_ANGLE_ENCODER_CALIBRATED) &&
                       (m->calib.valid != 0U) &&
                       (g_angle_mgr.mode != FOC_FEEDBACK_SENSORLESS_PRIMARY))
@@ -559,21 +563,26 @@ static void foc_motor_slow_loop(foc_motor_t *m)
         float pos_ref = m->pos_origin_rad + m->target;
         float vel_ff_rpm = 0.0f;
         float pos_error;
+        float damp_speed;
         float iq_user;
-        float iq_damp;
-        float iq_damp_limit;
 
-        /* 梯形轨迹：目标变化时从当前状态重规划，之后每拍输出
-         * 平滑的位置参考 + 速度前馈（ODrive trap_traj 方案） */
+        /* 物理安全硬限幅：严格限制在 0.50A 以内，杜绝任何失控狂甩 */
+        const float pos_iq_limit = (FOC_M0_POS_MAX_IQ_A < m->params.max_current_a) ?
+                                   FOC_M0_POS_MAX_IQ_A : m->params.max_current_a;
+
+        /* 梯形轨迹：目标变化时使用低延迟速度作为初速度重规划（准静止时初速度置零消除折返抖动） */
         if (m->target != m->traj_target_latch) {
             float pos_goal = m->pos_origin_rad + m->target;
+            float v_start = m->velocity_observer_rpm * FOC_RPM_TO_RADS;
+            if (fabsf(m->velocity_observer_rpm) < 10.0f) {
+                v_start = 0.0f;
+            }
 
-            /* 新位置目标不继承上一个目标的保持转矩积分。 */
             foc_pid_reset(&m->pid_pos);
             foc_traj_plan(
                 &m->traj, pos_goal,
                 m->position_rad,
-                m->velocity_filt_rpm * FOC_RPM_TO_RADS,
+                v_start,
                 m->cfg.pos_vel_limit_rpm * FOC_RPM_TO_RADS,
                 m->cfg.traj_accel_rpm_s * FOC_RPM_TO_RADS,
                 m->cfg.traj_accel_rpm_s * FOC_RPM_TO_RADS);
@@ -588,30 +597,66 @@ static void foc_motor_slow_loop(foc_motor_t *m)
             vel_ff_rpm = vel_ff_rads * FOC_RADS_TO_RPM;
         }
 
-        /*
-         * 位置 PI 直接输出用户坐标系 Iq；轨迹速度与实际速度之差
-         * 通过 pos_vel_kp 形成前馈/阻尼。相比“位置 P -> 速度 PI”，
-         * 位置积分直接补偿静摩擦，不会把制动阶段的速度积分带到
-         * 下一次脱槽；相比固定 0.38 A 前馈，也不会形成继电极限环。
-        */
+        /* 1. 位置环阻尼专用轻度一阶低通滤波（40Hz）：
+         *    有效滤除二阶 PLL 的微分白噪声，同时提供充裕的相位裕量。 */
+        damp_speed = foc_lpf_update(&m->lpf_pos_damp, m->velocity_observer_rpm, dt);
+
+        /* 2. 位置误差与充沛起步刚度项（限幅 0.35A，预留 0.15A 充足刹车裕量）：
+         *    直接依据位置误差生成力矩，打破轴承静摩擦与磁铁齿槽死区，敏捷起步！
+         *    关键保护：当转速已经达到或超过期望速度时，禁止位置项继续施加同向加速驱动，
+         *    彻底杜绝因位置滞后把巡航转速推高超过 80 RPM 限速！ */
         pos_error = pos_ref - m->position_rad;
-        /*
-         * 低限流、小惯量外转子存在明显齿槽效应。位置误差越过零点时，
-         * 上一方向积累的保持电流会继续推动转子并形成低频极限环；
-         * 清除该积分后由速度阻尼接管制动，再从新方向平滑建立保持力。
-         */
-        if ((m->pid_pos.prev_error * pos_error) < 0.0f) {
-            foc_pid_reset(&m->pid_pos);
+        float iq_pos = foc_clampf(m->cfg.pos_kp * pos_error, -0.35f, 0.35f);
+        if ((vel_ff_rpm > 0.0f) && (damp_speed >= vel_ff_rpm)) {
+            if (iq_pos > 0.0f) {
+                iq_pos = 0.0f;
+            }
+        } else if ((vel_ff_rpm < 0.0f) && (damp_speed <= vel_ff_rpm)) {
+            if (iq_pos < 0.0f) {
+                iq_pos = 0.0f;
+            }
         }
-        iq_user = foc_pid_update(&m->pid_pos, pos_error, dt);
-        iq_damp_limit =
-            FOC_POS_DAMP_CURRENT_RATIO * m->params.max_current_a;
-        iq_damp = m->cfg.pos_vel_kp *
-                  (vel_ff_rpm - m->velocity_observer_rpm);
-        iq_user += foc_clampf(iq_damp, -iq_damp_limit, iq_damp_limit);
-        m->vel_ref_rpm = vel_ff_rpm; /* status 中显示轨迹速度前馈 */
-        m->iq_ref = dir * foc_clampf(
-            iq_user, -m->params.max_current_a, m->params.max_current_a);
+
+        /* 3. 连续平滑速度阻尼项：
+         *    跟踪梯形规划速度前馈 vel_ff_rpm，动态吸收多余动能；
+         *    完全线性，无任何非对称硬切换，杜绝自激极限环！ */
+        float vel_err = vel_ff_rpm - damp_speed;
+        float k_damp = (m->cfg.pos_vel_kp > 0.0f) ? m->cfg.pos_vel_kp : 0.0080f;
+        float iq_damp = k_damp * vel_err;
+
+        /* 4. 合成力矩 */
+        iq_user = iq_pos + iq_damp;
+
+        /* 5. 到位静止死区门控：当转子处于准静止锁定区间
+         *    （|速度| < 2.5 RPM 且 |位置误差| < 0.005 rad），阻尼平滑归零，
+         *    若进入极小死区（<0.0015 rad），电流完全归零，实现绝对静音锁定！ */
+        if ((fabsf(damp_speed) < 2.5f) && (fabsf(pos_error) < 0.005f)) {
+            iq_user = m->cfg.pos_kp * pos_error;
+            if (fabsf(pos_error) < 0.0015f) {
+                iq_user = 0.0f;
+            }
+        }
+
+        /* 6. 绝对转速硬天花板与超速强力抑制：
+         *    严禁转速突破 pos_vel_limit_rpm（80 RPM），一旦超速立即切断驱动并施加制动力矩 */
+        const float v_lim = m->cfg.pos_vel_limit_rpm;
+        if (v_lim > 0.0f) {
+            if (damp_speed >= v_lim) {
+                if (iq_user > 0.0f) {
+                    iq_user = 0.0f;
+                }
+                iq_user -= 0.015f * (damp_speed - v_lim);
+            } else if (damp_speed <= -v_lim) {
+                if (iq_user < 0.0f) {
+                    iq_user = 0.0f;
+                }
+                iq_user -= 0.015f * (damp_speed - (-v_lim));
+            }
+        }
+
+        /* 7. 严格受控的安全限幅与物理方向映射 */
+        m->vel_ref_rpm = vel_ff_rpm;
+        m->iq_ref = dir * foc_clampf(iq_user, -pos_iq_limit, pos_iq_limit);
         break;
     }
 
@@ -638,8 +683,14 @@ static void foc_motor_slow_loop(foc_motor_t *m)
         m->iq_ref += dir * m->anticog_hook(m->theta_mech);
     }
 
-    m->iq_ref = foc_clampf(m->iq_ref,
-                           -m->params.max_current_a, m->params.max_current_a);
+    if (m->mode == FOC_MODE_POSITION) {
+        const float pos_iq_limit = (FOC_M0_POS_MAX_IQ_A < m->params.max_current_a) ?
+                                   FOC_M0_POS_MAX_IQ_A : m->params.max_current_a;
+        m->iq_ref = foc_clampf(m->iq_ref, -pos_iq_limit, pos_iq_limit);
+    } else {
+        m->iq_ref = foc_clampf(m->iq_ref,
+                               -m->params.max_current_a, m->params.max_current_a);
+    }
 
     /* 堵转保护（VESC 思路）：速度/位置模式下电流给定顶到限幅、
      * 转子却几乎不动，持续超时说明卡死/负载超能力/编码器失效——
@@ -740,6 +791,7 @@ void foc_motor_init(foc_motor_t *m,
     m->traj.xf = 0.0f;
     m->traj_target_latch = 0.0f;
     m->pos_origin_rad = 0.0f;
+    foc_lpf_init(&m->lpf_pos_damp, 1.0f / (_2PI * 40.0f));
     m->test_hook = 0;
     m->anticog_hook = 0;
     m->anticog_sample_hook = 0;
@@ -1126,10 +1178,11 @@ uint8_t foc_motor_arm(foc_motor_t *m)
         return 0U;
     }
 
-    /* 闭环模式必须先有有效校准（或明确切到开环角度源，或处于纯无感主控模式） */
+    /* 闭环模式必须先有有效校准且已捕获 Z 信号建立真实零点（禁止仅凭 Flash 存储的未对齐 offset 盲目闭环） */
     if ((m->mode != FOC_MODE_OPENLOOP_VF) &&
         (g_angle_mgr.mode != FOC_FEEDBACK_SENSORLESS_PRIMARY) &&
         ((m->calib.valid == 0U) ||
+         (m->calib.from_store != 0U) ||
          (m->angle_source != FOC_ANGLE_ENCODER_CALIBRATED))) {
         foc_motor_fault(m, FOC_FAULT_NOT_CALIBRATED);
         return 0U;
@@ -1187,6 +1240,7 @@ uint8_t foc_motor_arm(foc_motor_t *m)
     m->traj.active = 0U;
     m->traj.xf = m->position_rad;
     m->traj_target_latch = m->target;
+    foc_lpf_reset(&m->lpf_pos_damp, m->velocity_observer_rpm);
 
     m->state = FOC_STATE_RUN;
     m->drv->enable();
@@ -1208,6 +1262,7 @@ void foc_motor_disarm(foc_motor_t *m)
     m->ol_angle_step = 0.0f;
     foc_pid_reset(&m->pid_vel);
     foc_pid_reset(&m->pid_pos);
+    foc_lpf_reset(&m->lpf_pos_damp, 0.0f);
     m->fw_integral = 0.0f;   /* 防御式：IDLE 下慢环不跑，不能留残留 */
     m->vel_ref_rpm = 0.0f;
     m->vel_track_pos_rad = m->position_rad;
@@ -1287,6 +1342,46 @@ uint8_t foc_motor_set_mode(foc_motor_t *m, foc_mode_t mode)
 void foc_motor_set_target(foc_motor_t *m, float value)
 {
     m->target = value;
+}
+
+void foc_motor_set_pos_abs(foc_motor_t *m, float abs_rad)
+{
+    m->target = abs_rad - m->pos_origin_rad;
+}
+
+void foc_motor_set_pos_rel(foc_motor_t *m, float rel_rad)
+{
+    m->target = rel_rad;
+}
+
+void foc_motor_step_pos_rel(foc_motor_t *m, float delta_rad)
+{
+    float new_abs_goal = m->position_rad + delta_rad;
+    m->target = new_abs_goal - m->pos_origin_rad;
+}
+
+void foc_motor_set_origin(foc_motor_t *m)
+{
+    m->pos_origin_rad = m->position_rad;
+    m->target = 0.0f;
+    m->traj_target_latch = 0.0f;
+    m->traj.active = 0U;
+    m->traj.xf = m->position_rad;
+}
+
+float foc_motor_get_pos_rel(const foc_motor_t *m)
+{
+    return m->position_rad - m->pos_origin_rad;
+}
+
+float foc_motor_get_pos_abs(const foc_motor_t *m)
+{
+    return m->position_rad;
+}
+
+float foc_motor_get_target_pos_abs(const foc_motor_t *m)
+{
+    return m->pos_origin_rad + m->target;
 }
 
 void foc_motor_set_angle_source(foc_motor_t *m, foc_angle_source_t src)

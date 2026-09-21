@@ -286,6 +286,7 @@ void foc_calib_task(void)
                      index_rad));
             }
             m->calib.valid = 1U;
+            m->calib.from_store = 0U; /* 真实 Z 脉冲已捕获，物理绝对机械零点正式确立 */
 
             /* 校准已建立零点，此后关闭"每圈 Z 清零"：Z 中断锁存的
              * 计数到快环处理之间有最多 62.5µs 延迟，运行中每圈硬清零

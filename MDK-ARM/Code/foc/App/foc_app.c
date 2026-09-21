@@ -53,7 +53,7 @@ void foc_app_vf_reset_commands(void)
 {
     /* Keep boost/slope tuning across stop; clear every motion/output state. */
     g_m0_openloop_rpm = 0.0f;
-    g_m0_openloop_vq_applied = 0.0f;
+    g_m0_openloop_vq_applied = 0.0f; 
     g_m0_openloop_rpm_applied = 0.0f;
     g_m0_vf_vq_target = 0.0f;
     vf_ramp_active = 0U;

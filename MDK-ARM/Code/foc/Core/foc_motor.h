@@ -132,6 +132,7 @@ typedef struct foc_motor {
     float pos_origin_rad;          /* 位置模式原点: arm() 锁定的使能点位置,
                                     * target 语义 = 相对该原点的偏移 rad,
                                     * target 0 = 回到使能点 (伺服惯例) */
+    foc_lpf_t lpf_pos_damp;        /* 位置环专用一阶阻尼低通滤波器 (60Hz, 消除高频量化噪声同时保证极小相位滞后) */
 
     /* ---- 内部 ---- */
     float ol_angle_step;           /* 开环每拍电角度增量 */
@@ -204,6 +205,28 @@ uint8_t foc_motor_set_mode(foc_motor_t *m, foc_mode_t mode);
 
 /** 设置目标值，语义随当前模式：V / A / RPM / rad */
 void foc_motor_set_target(foc_motor_t *m, float value);
+
+/* ---- 位置模式专用目标与原点扩展接口 ---- */
+/** 设置绝对物理位置目标（以编码器多圈绝对坐标为准） */
+void foc_motor_set_pos_abs(foc_motor_t *m, float abs_rad);
+
+/** 设置相对原点位置目标（等效于 set_target，相对 pos_origin_rad） */
+void foc_motor_set_pos_rel(foc_motor_t *m, float rel_rad);
+
+/** 相对当前物理位置步进增量 */
+void foc_motor_step_pos_rel(foc_motor_t *m, float delta_rad);
+
+/** 将当前实际物理位置重设为用户原点（使当前位置相对值为 0） */
+void foc_motor_set_origin(foc_motor_t *m);
+
+/** 获取当前相对使能原点的偏移 rad */
+float foc_motor_get_pos_rel(const foc_motor_t *m);
+
+/** 获取当前绝对物理位置 rad */
+float foc_motor_get_pos_abs(const foc_motor_t *m);
+
+/** 获取当前设定的绝对物理目标 rad */
+float foc_motor_get_target_pos_abs(const foc_motor_t *m);
 
 /** 设置电角度来源（开环推进 or 编码器+校准偏移） */
 void foc_motor_set_angle_source(foc_motor_t *m, foc_angle_source_t src);
